@@ -1,4 +1,7 @@
-node_modules/
-dist/
-.env
+/target/
+/results/
+/testdata/results/
+**/*.rs.bk
 *.log
+.DS_Store
+Thumbs.db

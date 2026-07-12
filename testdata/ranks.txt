@@ -1,0 +1,6 @@
+#harmonicc_pos	#harmonicc_val	#pr_pos	#pr_val	#host_rev	#n_hosts
+1	100.0	2	0.5	com.alpha	1
+2	80.0	1	0.9	com.beta	1
+3	50.0	3	0.3	org.news	3
+4	10.0	4	0.1	com.gamma	1
+5	5.0	5	0.05	com.example	2

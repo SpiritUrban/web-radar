@@ -1,0 +1,5 @@
+0	com.alpha	1
+1	com.example	2
+2	com.beta	1
+3	org.news	3
+4	com.gamma	1
