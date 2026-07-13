@@ -1,10 +1,11 @@
 [paths]
-vertices = "testdata/vertices.txt"
-edges = "testdata/edges.txt"
-ranks = "testdata/ranks.txt"
-results_dir = "testdata/results"
+# Paths are relative to THIS config file (testdata/).
+vertices = "vertices.txt"
+edges = "edges.txt"
+ranks = "ranks.txt"
+results_dir = "results"
 
 rank_metric = "pagerank"
 
 [[targets]]
-domain = "example.com"
+domain = "https://example.com/"

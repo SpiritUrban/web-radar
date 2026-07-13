@@ -564,9 +564,11 @@ fn write_results(
     inbound: &AHashMap<u32, AHashSet<u32>>,
     id_to_rev: &AHashMap<u32, String>,
     ranks: &AHashMap<String, f64>,
-) -> Result<()> {
+) -> Result<Vec<PathBuf>> {
     fs::create_dir_all(results_dir)
         .with_context(|| format!("failed to create {}", results_dir.display()))?;
+
+    let mut written = Vec::new();
 
     for (&target_id, rev_target) in target_ids {
         let sources = inbound.get(&target_id);
@@ -604,14 +606,27 @@ fn write_results(
         writer.write_all(b"\n")?;
         writer.flush()?;
 
+        let abs = pretty_path(&out_path);
         info!(
             "wrote {} source(s) → {}",
             entries.len(),
-            out_path.display()
+            abs.display()
         );
+        written.push(abs);
     }
 
-    Ok(())
+    Ok(written)
+}
+
+/// Absolute path without Windows `\\?\` prefix (nicer logs).
+fn pretty_path(p: &Path) -> PathBuf {
+    let abs = p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    let s = abs.to_string_lossy();
+    if let Some(stripped) = s.strip_prefix(r"\\?\") {
+        PathBuf::from(stripped)
+    } else {
+        abs
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -651,7 +666,7 @@ pub fn run(cfg: &Config) -> Result<()> {
     let ranks = pass_load_ranks(&cfg.paths.ranks, &needed_revs, cfg.rank_metric)?;
 
     // Write JSON
-    write_results(
+    let written = write_results(
         &cfg.paths.results_dir,
         &target_ids,
         &inbound,
@@ -659,7 +674,16 @@ pub fn run(cfg: &Config) -> Result<()> {
         &ranks,
     )?;
 
-    info!("done.");
+    let results_abs = pretty_path(&cfg.paths.results_dir);
+
+    // Loud, hard-to-miss summary (JS-dev friendly).
+    info!("================================================");
+    info!("DONE. Results folder:");
+    info!("  {}", results_abs.display());
+    for p in &written {
+        info!("  • {}", p.display());
+    }
+    info!("================================================");
     Ok(())
 }
 

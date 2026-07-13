@@ -1,21 +1,22 @@
-# Paths to Common Crawl domain-level web graph files.
-# Accepts plain .txt or .txt.gz (gzip is auto-detected by extension).
+# === web-radar config ===
+# Paths are relative to THIS file. Gzip (.gz) is OK.
+
 [paths]
-# Adjust paths to where you stored the Common Crawl domain graph files.
-# Gzip (.gz) is supported and auto-detected by extension.
-vertices = "cc-main-2026-apr-may-jun-domain-vertices.txt/cc-main-2026-apr-may-jun-domain-vertices.txt"
+# Folder is fine — tool picks the file inside automatically.
+vertices = "cc-main-2026-apr-may-jun-domain-vertices.txt"
 edges = "cc-main-2026-apr-may-jun-domain-edges.txt"
 ranks = "cc-main-2026-apr-may-jun-domain-ranks.txt"
 results_dir = "results"
 
-# Which rank metric to attach to each source domain.
-# Valid values: "pagerank" (default) or "harmonic"
+# "pagerank" or "harmonic"
 rank_metric = "pagerank"
 
-# Domains to analyze. For each target the tool finds all domains that
-# link *to* it and writes results/{reversed-domain}.json
+# Full URLs are OK — tool strips https://, www., paths.
 [[targets]]
-domain = "example.com"
+domain = "https://my-transfer.com.ua/"
 
 [[targets]]
-domain = "wikipedia.org"
+domain = "https://travel-taxi.com.ua/"
+
+[[targets]]
+domain = "https://skytransfer.com.ua/"

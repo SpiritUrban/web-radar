@@ -51,28 +51,41 @@ Gzip-compressed files (`.gz`) are detected automatically.
 
 ---
 
-## Build
+## Quick start (Windows, least hassle)
+
+From the project folder in PowerShell:
+
+```powershell
+# Tiny demo (no multi-GB downloads) + open results folder
+.\run.ps1 -Demo -Open
+
+# Real run (needs vertices + edges + ranks files next to config.toml)
+.\run.ps1 -Open
+```
+
+`run.ps1` builds the release binary if needed, runs the tool, then prints
+**absolute paths** to every JSON file. Results always go under:
+
+```
+web-radar\results\                 # normal run
+web-radar\testdata\results\        # -Demo
+```
+
+---
+
+## Build (manual)
 
 ```bash
-# Debug
-cargo build
-
-# Optimized release (LTO, stripped)
 cargo build --release
 ```
 
-Binary path:
-
-```
-target/release/web-radar        # Linux / macOS
-target\release\web-radar.exe    # Windows
-```
+Binary: `target/release/web-radar.exe` (Windows) or `target/release/web-radar`.
 
 ---
 
 ## Configuration
 
-Edit `config.toml`:
+Edit `config.toml` (paths are relative to the config file):
 
 ```toml
 [paths]
@@ -81,38 +94,28 @@ edges    = "cc-main-2026-apr-may-jun-domain-edges.txt"
 ranks    = "cc-main-2026-apr-may-jun-domain-ranks.txt"
 results_dir = "results"
 
-# "pagerank" (default) or "harmonic"
-rank_metric = "pagerank"
+rank_metric = "pagerank"   # or "harmonic"
 
 [[targets]]
-domain = "example.com"
-
-[[targets]]
-domain = "wikipedia.org"
+domain = "https://example.com/"   # URL or bare domain — both OK
 ```
 
-Paths may point to plain text or `.gz` files.
+You need **all three** graph files. Download from
+[Common Crawl Web Graphs](https://commoncrawl.org/web-graphs).
 
 ---
 
-## Run
+## Run (manual)
 
-```bash
-# Default: reads ./config.toml
-cargo run --release
+```powershell
+# always from project root
+.\target\release\web-radar.exe -c config.toml
 
-# Custom config path
-cargo run --release -- --config /path/to/config.toml
-
-# Or after install / direct binary
-./target/release/web-radar -c config.toml
-
-# Quiet / verbose logging
-./target/release/web-radar -q
-./target/release/web-radar -vv      # debug
+# demo fixture
+.\target\release\web-radar.exe -c testdata\config.toml
 ```
 
-Environment variable `RUST_LOG` is also honoured (`RUST_LOG=debug`).
+`RUST_LOG=debug` works if you want more noise.
 
 ---
 
