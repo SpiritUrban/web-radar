@@ -5,3 +5,11 @@
 *.log
 .DS_Store
 Thumbs.db
+
+# Common Crawl domain graph dumps (multi-GB)
+/cc-main-*-domain-vertices.txt/
+/cc-main-*-domain-edges.txt/
+/cc-main-*-domain-ranks.txt/
+/cc-main-*-domain-vertices.txt.gz
+/cc-main-*-domain-edges.txt.gz
+/cc-main-*-domain-ranks.txt.gz
