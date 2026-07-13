@@ -17,9 +17,6 @@ rank_metric = "pagerank"
 domain = "https://my-transfer.com.ua/"
 
 [[targets]]
-domain = "https://www.my-transfer.com.ua"
-
-[[targets]]
 domain = "https://travel-taxi.com.ua/"
 
 [[targets]]
