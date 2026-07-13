@@ -1,91 +1,107 @@
 # web-radar
 
-Memory-efficient Rust CLI that extracts **inbound domain links** from [Common Crawl](https://commoncrawl.org/) domain-level web graphs.
+Memory-efficient Rust CLI that extracts **inbound and outbound domain links** (plus each target’s own rank) from [Common Crawl](https://commoncrawl.org/) domain-level web graphs.
 
-For each target domain in `config.toml` the tool scans the multi-gigabyte edges file (streamed via `BufReader`, never loaded fully into RAM), finds every domain that links *to* the target, attaches a rank (PageRank or Harmonic Centrality), and writes:
+For every domain listed in `config.toml` the tool streams the multi‑gigabyte graph files (never loads the full edges file into RAM) and writes one JSON report:
 
-```
+1. **Own rank** — PageRank or Harmonic Centrality of the target itself  
+2. **Inbound** — domains that link *to* the target (with rank)  
+3. **Outbound** — domains the target links *to* (with rank)
+
+Output path:
+
+```text
 results/{reversed-domain}.json
 ```
 
-Example output (`results/com.example.json`):
-
-```json
-[
-  {
-    "source": "other.com",
-    "rank": 123.45
-  },
-  {
-    "source": "blog.news.org",
-    "rank": 12.3
-  }
-]
-```
-
-Sources are sorted by `rank` descending.
-
----
-
-## Common Crawl input format
-
-Download a domain graph release from the [Common Crawl Web Graphs](https://commoncrawl.org/web-graphs) page. You need three files:
-
-| File | Format | Description |
-|------|--------|-------------|
-| `*-domain-vertices.txt[.gz]` | `id \t rev_domain \t n_hosts` | Nodes in reverse domain notation |
-| `*-domain-edges.txt[.gz]` | `from_id \t to_id` | Directed edges (~10–20 GiB) |
-| `*-domain-ranks.txt[.gz]` | `#harmonicc_pos \t #harmonicc_val \t #pr_pos \t #pr_val \t #host_rev \t …` | Centrality ranks |
-
-Domains are stored in **reverse domain notation**: `example.com` → `com.example`.
-
-Gzip-compressed files (`.gz`) are detected automatically.
+Example: `skytransfer.com.ua` → `results/ua.com.skytransfer.json`
 
 ---
 
 ## Requirements
 
-- [Rust](https://rustup.rs/) 1.75+ (edition 2021)
-- Disk space for the graph files (vertices ~1 GiB, edges ~13+ GiB, ranks ~2 GiB)
-- RAM: typically a few hundred MB depending on how many unique sources link to your targets (not proportional to the edges file size)
+| Need | Notes |
+|------|--------|
+| [Rust](https://rustup.rs/) 1.75+ | `cargo` on `PATH` |
+| Windows PowerShell | for `.\run.ps1` (or run the `.exe` yourself) |
+| Disk | vertices ~1–3 GiB, edges ~10–20 GiB, ranks ~1–2 GiB |
+| RAM | usually a few hundred MB (depends on neighbor count, not edges file size) |
 
----
-
-## Quick start (Windows, least hassle)
-
-From the project folder in PowerShell:
+Install Rust once:
 
 ```powershell
-# Tiny demo (no multi-GB downloads) + open results folder
+# https://rustup.rs — then restart the terminal
+rustc --version
+cargo --version
+```
+
+---
+
+## Quick start (recommended on Windows)
+
+Open PowerShell **in the project root** (`web-radar\`):
+
+```powershell
+# 1) Tiny offline demo (no multi-GB downloads) + open results in Explorer
 .\run.ps1 -Demo -Open
 
-# Real run (needs vertices + edges + ranks files next to config.toml)
+# 2) Full run against Common Crawl files + open results
 .\run.ps1 -Open
+
+# 3) Full run without opening Explorer
+.\run.ps1
 ```
 
-`run.ps1` builds the release binary if needed, runs the tool, then prints
-**absolute paths** to every JSON file. Results always go under:
+### What `run.ps1` does
 
+1. `cd` to the project folder (safe if you launch it from elsewhere)  
+2. `cargo build --release` (unless `-SkipBuild`)  
+3. Runs `target\release\web-radar.exe -c …`  
+4. Prints **absolute paths** to every `*.json` under the results folder  
+5. Optionally opens that folder in Explorer (`-Open`)
+
+### `run.ps1` flags
+
+| Flag | Meaning |
+|------|---------|
+| *(none)* | Build + run with `config.toml` → results in `results\` |
+| `-Demo` | Use tiny fixture `testdata\config.toml` → `testdata\results\` (no CC downloads) |
+| `-Open` | After a successful run, open the results folder in Explorer |
+| `-SkipBuild` | Skip `cargo build`; use an already-built `target\release\web-radar.exe` |
+
+Examples:
+
+```powershell
+.\run.ps1 -Demo              # quick smoke test
+.\run.ps1 -Demo -Open        # smoke test + open folder
+.\run.ps1 -Open              # real graph run + open folder
+.\run.ps1 -SkipBuild -Open   # re-run without recompiling
 ```
-web-radar\results\                 # normal run
-web-radar\testdata\results\        # -Demo
+
+If PowerShell blocks scripts:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+# or one-shot:
+powershell -ExecutionPolicy Bypass -File .\run.ps1 -Demo -Open
 ```
 
 ---
 
-## Build (manual)
+## Full run checklist (real Common Crawl data)
 
-```bash
-cargo build --release
-```
+1. **Download** a domain graph from [Common Crawl Web Graphs](https://commoncrawl.org/web-graphs). You need three files:
 
-Binary: `target/release/web-radar.exe` (Windows) or `target/release/web-radar`.
+   | Kind | Typical name |
+   |------|----------------|
+   | Vertices | `*-domain-vertices.txt` (or `.gz`) |
+   | Edges | `*-domain-edges.txt` (or `.gz`, largest) |
+   | Ranks | `*-domain-ranks.txt` (or `.gz`) |
 
----
+2. **Place them** next to `config.toml` (or point `[paths]` at them).  
+   Folders that contain a single matching file are OK — the tool picks the file inside automatically.
 
-## Configuration
-
-Edit `config.toml` (paths are relative to the config file):
+3. **Edit** `config.toml` — paths + target domains:
 
 ```toml
 [paths]
@@ -97,83 +113,196 @@ results_dir = "results"
 rank_metric = "pagerank"   # or "harmonic"
 
 [[targets]]
-domain = "https://example.com/"   # URL or bare domain — both OK
+domain = "https://example.com/"
+
+[[targets]]
+domain = "https://another-site.com.ua/"
 ```
 
-You need **all three** graph files. Download from
-[Common Crawl Web Graphs](https://commoncrawl.org/web-graphs).
+4. **Run** from the project root:
+
+```powershell
+.\run.ps1 -Open
+```
+
+A full edges pass can take a long time (tens of minutes on HDD; faster on SSD). Progress bars show throughput and ETA.
+
+5. **Read** results under `results\` (absolute path is printed at the end).
 
 ---
 
-## Run (manual)
+## Configuration reference
+
+Paths in `config.toml` are **relative to the config file’s directory** (not necessarily your current working directory).
+
+| Key | Description |
+|-----|-------------|
+| `paths.vertices` | Domain vertices file or folder containing it |
+| `paths.edges` | Domain edges file or folder |
+| `paths.ranks` | Domain ranks file or folder |
+| `paths.results_dir` | Output directory (default `results`) |
+| `rank_metric` | `"pagerank"` (default) or `"harmonic"` |
+| `[[targets]].domain` | URL or bare hostname — `https://`, `www.`, paths, ports are stripped |
+
+Gzip (`.gz`) is detected by extension and streamed automatically.
+
+---
+
+## Manual build & run (without `run.ps1`)
 
 ```powershell
-# always from project root
+# from project root
+cargo build --release
+
+# real config
 .\target\release\web-radar.exe -c config.toml
 
 # demo fixture
 .\target\release\web-radar.exe -c testdata\config.toml
 ```
 
-`RUST_LOG=debug` works if you want more noise.
+### CLI flags
 
----
+| Flag | Description |
+|------|-------------|
+| `-c`, `--config <FILE>` | Config path (default `config.toml`) |
+| `-v` / `-vv` / `-vvv` | More log detail (`info` / `debug` / `trace`) |
+| `-q`, `--quiet` | Errors only |
 
-## How it works
+Logging also respects `RUST_LOG` if you set it, e.g.:
 
-Four streaming passes keep peak memory low:
-
-1. **Vertices (targets)** — map each configured domain to its numeric node ID.
-2. **Edges (stream)** — for every `from → to` edge, if `to` is a target, record `from` as an inbound source. The edges file is read line-by-line with a 1 MiB buffer; nothing is held except the collected source ID sets.
-3. **Vertices (sources)** — resolve collected source IDs back to reverse domain names.
-4. **Ranks** — attach PageRank / Harmonic Centrality to those sources.
-
-Then one pretty-printed JSON file per target is written under `results/`.
-
-Progress bars ([indicatif](https://crates.io/crates/indicatif)) show throughput and ETA for each pass.
-
----
-
-## Project layout
-
-```
-web-radar/
-├── Cargo.toml
-├── config.toml          # example configuration
-├── README.md
-└── src/
-    ├── main.rs          # CLI entry point (clap + logging)
-    ├── config.rs        # TOML config types & validation
-    ├── reverse.rs       # reverse domain notation helpers
-    └── processor.rs     # multi-pass streaming pipeline
+```powershell
+$env:RUST_LOG = "debug"
+.\target\release\web-radar.exe -c config.toml
 ```
 
 ---
 
 ## Output schema
 
+### Found domain
+
 ```json
-[
-  { "source": "<normal-domain>", "rank": <float> }
-]
+{
+  "domain": "example.com",
+  "found": true,
+  "rank": 0.05,
+  "inbound": [
+    { "domain": "other.com", "rank": 123.45 },
+    { "domain": "blog.news.org", "rank": 12.3 }
+  ],
+  "outbound": [
+    { "domain": "partner.org", "rank": 9.1 },
+    { "domain": "cdn.assets.net", "rank": 0.4 }
+  ]
+}
 ```
+
+`inbound` and `outbound` are sorted by `rank` **descending** (strongest first).
+
+### Not found in the graph (stub)
+
+If a target is missing from Common Crawl vertices, a stub is still written so the gap is obvious:
+
+```json
+{
+  "domain": "my-transfer.com.ua",
+  "found": false,
+  "rank": null,
+  "inbound": [],
+  "outbound": []
+}
+```
+
+### Field meanings
 
 | Field | Meaning |
 |-------|---------|
-| `source` | Domain that links to the target (normal notation) |
-| `rank` | PageRank (`#pr_val`) or Harmonic Centrality (`#harmonicc_val`), depending on `rank_metric` |
+| `domain` | Normalized target hostname |
+| `found` | `true` if the domain exists in vertices; `false` → stub only |
+| `rank` | Centrality of the **target itself** (`null` if not found) |
+| `inbound[]` | Who links **to** the target |
+| `outbound[]` | Where the target links **to** |
+| `*.rank` | Same metric as `rank_metric` for that neighbor |
 
-Filename = reverse domain of the target, e.g. `wikipedia.org` → `results/org.wikipedia.json`.
+**Filename** = reverse domain of the target:
+
+| Domain | File |
+|--------|------|
+| `example.com` | `com.example.json` |
+| `skytransfer.com.ua` | `ua.com.skytransfer.json` |
+
+---
+
+## Understanding `rank`
+
+- Comes from Common Crawl ranks (`#pr_val` or `#harmonicc_val`).
+- **Larger number = more important** in the link graph (not Google SERP position).
+- Values are small fractions (often `0.01` for global giants, `1e-9` for small sites).  
+  Example: `7.97e-9` means `0.00000000797` — **much smaller** than `0.009`.
+- Do not compare PageRank and Harmonic numbers directly (different scales).
+
+---
+
+## How it works
+
+Four streaming passes:
+
+1. **Vertices (targets)** — map configured domains → node IDs. Missing domains get `found: false` stubs immediately.  
+2. **Edges** — single pass: inbound (`to` = target) + outbound (`from` = target).  
+3. **Vertices (neighbors)** — resolve neighbor IDs → domain names.  
+4. **Ranks** — attach centrality to targets and neighbors.
+
+Progress bars ([indicatif](https://crates.io/crates/indicatif)) show bytes / speed / ETA per pass.
+
+---
+
+## Project layout
+
+```text
+web-radar/
+├── Cargo.toml
+├── config.toml              # real run configuration
+├── run.ps1                  # one-command build + run (Windows)
+├── README.md
+├── results/                 # JSON output (full run)
+├── testdata/                # tiny offline demo
+│   ├── config.toml
+│   ├── vertices.txt
+│   ├── edges.txt
+│   ├── ranks.txt
+│   └── results/
+└── src/
+    ├── main.rs              # CLI (clap + logging)
+    ├── config.rs            # TOML load & validation
+    ├── reverse.rs           # reverse-domain helpers
+    └── processor.rs         # multi-pass pipeline
+```
+
+Graph dumps (`*-domain-*.txt`) live next to `config.toml` when you do a full run (often as a folder with the file inside).
+
+---
+
+## Troubleshooting
+
+| Problem | What to do |
+|---------|------------|
+| `config file not found` | Run from project root, or pass full path: `-c C:\path\to\config.toml`. Prefer `.\run.ps1`. |
+| `missing vertices/edges/ranks file` | Download the three domain-graph files and fix `[paths]` in `config.toml`. Or try `.\run.ps1 -Demo`. |
+| `found: false` for a domain | Domain is not in this CC release (too new / rarely crawled). Not a code bug. |
+| Script won’t run | `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` or `powershell -ExecutionPolicy Bypass -File .\run.ps1` |
+| Slow full run | Use SSD + release build; decompress `.gz` to `.txt` if CPU-bound on gzip. |
+| `cargo` not found | Install [Rust](https://rustup.rs/) and open a **new** terminal. |
 
 ---
 
 ## Performance tips
 
-- Prefer **release** builds (`cargo build --release`).
-- Keep graph files on a fast local SSD.
-- Using pre-decompressed `.txt` files avoids gzip CPU overhead at the cost of more disk.
-- Limit `[[targets]]` to domains you care about — source-ID sets grow with popularity of the target (e.g. `google.com` has many inbound edges).
-- For extremely popular targets, ensure free RAM is enough to hold the unique source ID set plus their names/ranks (usually still far below loading the edges file).
+- Always use **release**: `cargo build --release` / `.\run.ps1`.  
+- Keep graph files on a fast local SSD.  
+- Prefer plain `.txt` over `.gz` if you have disk (less CPU).  
+- Limit `[[targets]]` — popular sites (e.g. `google.com`) create huge neighbor sets.  
+- Peak RAM tracks unique neighbors for your targets, not the full edges file size.
 
 ---
 

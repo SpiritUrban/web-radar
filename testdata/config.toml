@@ -9,3 +9,7 @@ rank_metric = "pagerank"
 
 [[targets]]
 domain = "https://example.com/"
+
+# Intentionally absent from vertices — demo of found=false stub
+[[targets]]
+domain = "https://not-in-graph.test/"

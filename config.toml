@@ -12,8 +12,12 @@ results_dir = "results"
 rank_metric = "pagerank"
 
 # Full URLs are OK — tool strips https://, www., paths.
+
 [[targets]]
 domain = "https://my-transfer.com.ua/"
+
+[[targets]]
+domain = "https://www.my-transfer.com.ua"
 
 [[targets]]
 domain = "https://travel-taxi.com.ua/"

@@ -1,7 +1,8 @@
-//! web-radar — extract inbound domain links from Common Crawl web graphs.
+//! web-radar — extract inbound/outbound domain links from Common Crawl web graphs.
 //!
 //! Streams multi-GB vertices / edges / ranks files with low RAM usage and
-//! writes one JSON result file per configured target domain.
+//! writes one JSON result file per configured target domain (own rank +
+//! who links to it and where it links to).
 
 mod config;
 mod processor;
@@ -19,13 +20,14 @@ use config::Config;
 
 /// Memory-efficient CLI for Common Crawl domain-level web graphs.
 ///
-/// For each target domain listed in the config, finds every domain that
-/// links *to* it and writes `results/{reversed-domain}.json`.
+/// For each target domain listed in the config: reports its own rank,
+/// every domain that links *to* it (inbound), and every domain it links
+/// *to* (outbound). Writes `results/{reversed-domain}.json`.
 #[derive(Debug, Parser)]
 #[command(
     name = "web-radar",
     version,
-    about = "Extract inbound links for target domains from Common Crawl domain web graphs",
+    about = "Extract inbound/outbound links and ranks for target domains from Common Crawl domain web graphs",
     long_about = None
 )]
 struct Cli {
