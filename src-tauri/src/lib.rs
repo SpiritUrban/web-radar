@@ -1,4 +1,4 @@
-﻿#[path = "../../src/config.rs"]
+#[path = "../../src/config.rs"]
 mod config;
 #[path = "../../src/processor.rs"]
 mod processor;
@@ -58,10 +58,10 @@ impl UiConfig {
         let rank_metric = match self.rank_metric.as_str() {
             "pagerank" => RankMetric::Pagerank,
             "harmonic" => RankMetric::Harmonic,
-            other => return Err(format!("РќРµРІС–РґРѕРјР° РјРµС‚СЂРёРєР°: {other}")),
+            other => return Err(format!("Невідома метрика: {other}")),
         };
         if self.targets.iter().all(|x| x.trim().is_empty()) {
-            return Err("Р”РѕРґР°Р№С‚Рµ РїСЂРёРЅР°Р№РјРЅС– РѕРґРёРЅ РґРѕРјРµРЅ".into());
+            return Err("Додайте принаймні один домен".into());
         }
         Ok(Config {
             paths: PathsConfig {
@@ -77,8 +77,26 @@ impl UiConfig {
     }
 }
 
-fn locate_config() -> PathBuf {
-    std::env::current_dir().unwrap_or_default().join("config.toml")
+fn locate_config(app: &tauri::App) -> PathBuf {
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let mut candidates = vec![
+        cwd.join("config.toml"),
+        cwd.parent().unwrap_or(&cwd).join("config.toml"),
+    ];
+
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        candidates.push(resource_dir.join("config.toml"));
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            candidates.push(dir.join("config.toml"));
+        }
+    }
+
+    candidates
+        .into_iter()
+        .find(|path| path.is_file())
+        .unwrap_or_else(|| cwd.join("config.toml"))
 }
 
 #[tauri::command]
@@ -129,15 +147,15 @@ async fn start_analysis(app: AppHandle, state: State<'_, AppState>, config: UiCo
     let cfg = config.into_engine()?;
     let files = inspect_files(&cfg);
     if let Some(missing) = files.iter().find(|f| !f.exists) {
-        return Err(format!("Р¤Р°Р№Р» {} РЅРµ Р·РЅР°Р№РґРµРЅРѕ:\n{}", missing.kind, missing.path));
+        return Err(format!("Файл {} не знайдено:\n{}", missing.kind, missing.path));
     }
     let run_id = {
         let mut conn = state.db.lock().map_err(|_| "DB lock")?;
         db::replace_file_index(&mut conn, &files).map_err(|e| e.to_string())?;
         db::start_run(&conn, &metric, &targets, &results).map_err(|e| e.to_string())?
     };
-    emit(&app, run_id, "index", "Р¤Р°Р№Р»Рё РїРµСЂРµРІС–СЂРµРЅРѕ С‚Р° РїСЂРѕС–РЅРґРµРєСЃРѕРІР°РЅРѕ", 0.08);
-    emit(&app, run_id, "processing", "РЎРєР°РЅСѓРІР°РЅРЅСЏ РіСЂР°С„Р° Common CrawlвЂ¦", 0.15);
+    emit(&app, run_id, "index", "Файли перевірено та проіндексовано", 0.08);
+    emit(&app, run_id, "processing", "Сканування графа Common Crawl…", 0.15);
 
     let result = tokio::task::spawn_blocking(move || processor::run(&cfg))
         .await.map_err(|e| e.to_string())?;
@@ -148,11 +166,11 @@ async fn start_analysis(app: AppHandle, state: State<'_, AppState>, config: UiCo
     }
     match error {
         Some(error) => {
-            emit(&app, run_id, "failed", "РђРЅР°Р»С–Р· Р·Р°РІРµСЂС€РёРІСЃСЏ Р· РїРѕРјРёР»РєРѕСЋ", 1.0);
+            emit(&app, run_id, "failed", "Аналіз завершився з помилкою", 1.0);
             Err(error)
         }
         None => {
-            emit(&app, run_id, "complete", "Р РµР·СѓР»СЊС‚Р°С‚Рё РіРѕС‚РѕРІС–", 1.0);
+            emit(&app, run_id, "complete", "Результати готові", 1.0);
             Ok(())
         }
     }
@@ -166,7 +184,7 @@ pub fn run() {
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             let conn = db::open(&data_dir.join("web-radar.sqlite"))?;
-            app.manage(AppState { db: Mutex::new(conn), config_path: locate_config() });
+            app.manage(AppState { db: Mutex::new(conn), config_path: locate_config(app) });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

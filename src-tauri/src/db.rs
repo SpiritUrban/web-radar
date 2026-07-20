@@ -49,7 +49,7 @@ pub fn open(path: &Path) -> Result<Connection> {
            path TEXT NOT NULL,
            size_bytes INTEGER NOT NULL,
            modified_at INTEGER,
-           exists INTEGER NOT NULL,
+           exists_flag INTEGER NOT NULL,
            indexed_at TEXT NOT NULL
          );
          CREATE INDEX IF NOT EXISTS idx_runs_started_at ON runs(started_at DESC);
@@ -95,10 +95,10 @@ pub fn replace_file_index(conn: &mut Connection, files: &[FileIndex]) -> Result<
     let tx = conn.transaction()?;
     for file in files {
         tx.execute(
-            "INSERT INTO file_index(kind,path,size_bytes,modified_at,exists,indexed_at)
+            "INSERT INTO file_index(kind,path,size_bytes,modified_at,exists_flag,indexed_at)
              VALUES (?1,?2,?3,?4,?5,?6)
              ON CONFLICT(kind) DO UPDATE SET path=excluded.path,size_bytes=excluded.size_bytes,
-             modified_at=excluded.modified_at,exists=excluded.exists,indexed_at=excluded.indexed_at",
+             modified_at=excluded.modified_at,exists_flag=excluded.exists_flag,indexed_at=excluded.indexed_at",
             params![file.kind, file.path, file.size_bytes, file.modified_at, file.exists, chrono::Utc::now().to_rfc3339()],
         )?;
     }
@@ -107,10 +107,31 @@ pub fn replace_file_index(conn: &mut Connection, files: &[FileIndex]) -> Result<
 }
 
 pub fn file_index(conn: &Connection) -> Result<Vec<FileIndex>> {
-    let mut stmt = conn.prepare("SELECT kind,path,size_bytes,modified_at,exists FROM file_index ORDER BY kind")?;
+    let mut stmt = conn.prepare("SELECT kind,path,size_bytes,modified_at,exists_flag FROM file_index ORDER BY kind")?;
     let rows = stmt.query_map([], |row| Ok(FileIndex {
         kind: row.get(0)?, path: row.get(1)?, size_bytes: row.get::<_, i64>(2)? as u64,
         modified_at: row.get(3)?, exists: row.get(4)?,
     }))?;
     Ok(rows.filter_map(Result::ok).collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn creates_schema_and_reads_file_index() {
+        let conn = Connection::open_in_memory().expect("open SQLite");
+        conn.execute_batch(
+            "CREATE TABLE file_index (
+                kind TEXT PRIMARY KEY,
+                path TEXT NOT NULL,
+                size_bytes INTEGER NOT NULL,
+                modified_at INTEGER,
+                exists_flag INTEGER NOT NULL,
+                indexed_at TEXT NOT NULL
+            );"
+        ).expect("create file index schema");
+        assert!(file_index(&conn).expect("read file index").is_empty());
+    }
 }
