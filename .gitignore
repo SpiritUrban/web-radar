@@ -13,3 +13,8 @@ Thumbs.db
 /cc-main-*-domain-vertices.txt.gz
 /cc-main-*-domain-edges.txt.gz
 /cc-main-*-domain-ranks.txt.gz
+
+src-tauri/target/
+node_modules/
+dist/
+.vite/
