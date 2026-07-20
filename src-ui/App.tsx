@@ -6,11 +6,24 @@ import { openPath } from "@tauri-apps/plugin-opener";
 import {
   Activity, ArrowUpRight, Check, Database, FileJson, FolderOpen,
   Gauge, Globe2, History, LoaderCircle, Play, Plus, Radar, RefreshCw,
-  Settings2, Trash2, TriangleAlert,
+  Search, Settings2, Trash2, TriangleAlert,
 } from "lucide-react";
 import { useAppStore } from "./store";
+import SeoDiscoveryView from "./SeoDiscoveryView";
 import type { AppConfig, FileIndex, ProgressEvent, RunRecord } from "./types";
 
+const phaseLabels: Record<string, string> = {
+  starting: "Підготовка…", index: "Перевірка локальних файлів…", processing: "Підготовка потокового аналізу…",
+  vertices_targets: "Пошук цільових доменів у vertices", edges: "Сканування зв’язків у великому edges-файлі",
+  vertices_neighbors: "Визначення назв сусідніх доменів", ranks: "Завантаження рейтингів доменів",
+  writing: "Запис JSON-результатів", complete: "Результати готові", failed: "Аналіз завершився з помилкою",
+};
+const formatProgressMessage = (progress: ProgressEvent | null) => {
+  if (!progress) return "Обробка…";
+  const label = phaseLabels[progress.phase] ?? progress.message;
+  if (!progress.totalBytes) return label;
+  return `${label} · ${Math.min(100, (progress.processedBytes ?? 0) / progress.totalBytes * 100).toFixed(1)}%`;
+};
 const formatBytes = (bytes: number) => {
   if (!bytes) return "—";
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -21,7 +34,7 @@ const formatBytes = (bytes: number) => {
 function App() {
   const store = useAppStore();
   const [target, setTarget] = useState("");
-  const [view, setView] = useState<"setup" | "history">("setup");
+  const [view, setView] = useState<"setup" | "seo" | "history">("setup");
 
   const refresh = async () => {
     const [config, history, files] = await Promise.all([
@@ -87,6 +100,7 @@ function App() {
           </div>
           <nav className="flex rounded-xl border border-white/10 bg-white/[0.04] p-1 text-sm">
             <button className={view === "setup" ? "nav-active" : "nav-button"} onClick={() => setView("setup")}><Settings2 size={15}/> Аналіз</button>
+            <button className={view === "seo" ? "nav-active" : "nav-button"} onClick={() => setView("seo")}><Search size={15}/> SEO discovery</button>
             <button className={view === "history" ? "nav-active" : "nav-button"} onClick={() => setView("history")}><History size={15}/> Історія <span className="badge">{store.history.length}</span></button>
           </nav>
         </div>
@@ -137,7 +151,7 @@ function App() {
                     <SummaryRow label="Обробка" value="Rayon + Tokio"/>
                     <SummaryRow label="Історія" value="SQLite"/>
                   </div>
-                  {store.running && <div className="mt-6 rounded-xl border border-cyan-400/20 bg-cyan-400/[0.07] p-4"><div className="flex items-center gap-2 text-sm font-medium text-cyan-200"><LoaderCircle className="animate-spin" size={16}/>{store.progress?.message ?? "Обробка…"}</div><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-cyan-400 transition-all" style={{width:`${Math.max(4, (store.progress?.progress ?? 0) * 100)}%`}}/></div></div>}
+                  {store.running && <div className="mt-6 rounded-xl border border-cyan-400/20 bg-cyan-400/[0.07] p-4"><div className="flex items-center gap-2 text-sm font-medium text-cyan-200"><LoaderCircle className="animate-spin" size={16}/>{formatProgressMessage(store.progress)}</div><div className="mt-2 flex justify-between text-[10px] text-slate-500"><span>{store.progress?.totalBytes ? `${formatBytes(store.progress.processedBytes ?? 0)} / ${formatBytes(store.progress.totalBytes)}` : ""}</span><span>{store.progress?.elapsedSecs ? `${store.progress.elapsedSecs} с` : ""}</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-cyan-400 transition-all" style={{width:`${Math.max(4, (store.progress?.progress ?? 0) * 100)}%`}}/></div></div>}
                   <button className="run-button mt-6" disabled={store.running || validTargets === 0} onClick={run}>{store.running ? <LoaderCircle className="animate-spin" size={19}/> : <Play size={19} fill="currentColor"/>}{store.running ? "Аналізуємо…" : "Запустити аналіз"}</button>
                   <p className="mt-3 text-center text-xs text-slate-500">Великі графи можуть оброблятися десятки хвилин</p>
                 </section>
@@ -147,7 +161,7 @@ function App() {
               </aside>
             </div>
           </>
-        ) : <HistoryView history={store.history} />}
+        ) : view === "seo" ? <SeoDiscoveryView domains={store.config.targets} /> : <HistoryView history={store.history} />}
       </main>
     </div>
   );

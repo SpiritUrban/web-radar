@@ -53,7 +53,14 @@ pub fn open(path: &Path) -> Result<Connection> {
            indexed_at TEXT NOT NULL
          );
          CREATE INDEX IF NOT EXISTS idx_runs_started_at ON runs(started_at DESC);
-         CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);"
+         CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
+         CREATE TABLE IF NOT EXISTS seo_reports (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           generated_at TEXT NOT NULL,
+           provider TEXT NOT NULL,
+           report_json TEXT NOT NULL
+         );
+         CREATE INDEX IF NOT EXISTS idx_seo_reports_generated_at ON seo_reports(generated_at DESC);"
     )?;
     Ok(conn)
 }
@@ -104,6 +111,14 @@ pub fn replace_file_index(conn: &mut Connection, files: &[FileIndex]) -> Result<
     }
     tx.commit()?;
     Ok(())
+}
+
+pub fn save_seo_report(conn: &Connection, provider: &str, report_json: &str) -> Result<i64> {
+    conn.execute(
+        "INSERT INTO seo_reports(generated_at,provider,report_json) VALUES (?1,?2,?3)",
+        params![chrono::Utc::now().to_rfc3339(), provider, report_json],
+    )?;
+    Ok(conn.last_insert_rowid())
 }
 
 pub fn file_index(conn: &Connection) -> Result<Vec<FileIndex>> {

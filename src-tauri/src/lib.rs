@@ -5,10 +5,11 @@ mod processor;
 #[path = "../../src/reverse.rs"]
 mod reverse;
 mod db;
+mod seo;
 
 use std::path::PathBuf;
 use std::sync::Mutex;
-use std::time::UNIX_EPOCH;
+use std::time::{Instant, UNIX_EPOCH};
 
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -40,6 +41,9 @@ struct ProgressEvent {
     phase: String,
     message: String,
     progress: f64,
+    processed_bytes: u64,
+    total_bytes: u64,
+    elapsed_secs: u64,
 }
 
 impl UiConfig {
@@ -105,6 +109,15 @@ fn load_default_config(state: State<'_, AppState>) -> Result<UiConfig, String> {
 }
 
 #[tauri::command]
+async fn run_seo_discovery(state: State<'_, AppState>, request: seo::SeoDiscoveryRequest) -> Result<seo::SeoDiscoveryReport, String> {
+    let report = seo::discover(request).await.map_err(|error| format!("{error:#}"))?;
+    let json = serde_json::to_string(&report).map_err(|error| error.to_string())?;
+    let conn = state.db.lock().map_err(|_| "DB lock")?;
+    db::save_seo_report(&conn, &report.provider, &json).map_err(|error| error.to_string())?;
+    Ok(report)
+}
+
+#[tauri::command]
 fn get_run_history(state: State<'_, AppState>) -> Result<Vec<RunRecord>, String> {
     let conn = state.db.lock().map_err(|_| "DB lock")?;
     db::history(&conn).map_err(|e| e.to_string())
@@ -136,6 +149,47 @@ fn inspect_files(cfg: &Config) -> Vec<FileIndex> {
 fn emit(app: &AppHandle, run_id: i64, phase: &str, message: &str, progress: f64) {
     let _ = app.emit("run-progress", ProgressEvent {
         run_id, phase: phase.into(), message: message.into(), progress,
+        processed_bytes: 0, total_bytes: 0, elapsed_secs: 0,
+    });
+}
+
+fn emit_pipeline_progress(
+    app: &AppHandle,
+    run_id: i64,
+    phase: &str,
+    processed_bytes: u64,
+    total_bytes: u64,
+    elapsed_secs: u64,
+) {
+    let phase_ratio = if total_bytes > 0 {
+        (processed_bytes as f64 / total_bytes as f64).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let (base, weight) = match phase {
+        "vertices_targets" => (0.08, 0.12),
+        "edges" => (0.20, 0.50),
+        "vertices_neighbors" => (0.70, 0.12),
+        "ranks" => (0.82, 0.14),
+        "writing" => (0.96, 0.03),
+        "complete" => (0.99, 0.01),
+        _ => (0.08, 0.0),
+    };
+    let overall = (base + weight * phase_ratio).min(1.0);
+    eprintln!(
+        "[web-radar] phase={phase} bytes={processed_bytes}/{total_bytes} phase_progress={:.1}% overall={:.1}% elapsed={}s",
+        phase_ratio * 100.0,
+        overall * 100.0,
+        elapsed_secs,
+    );
+    let _ = app.emit("run-progress", ProgressEvent {
+        run_id,
+        phase: phase.into(),
+        message: phase.into(),
+        progress: overall,
+        processed_bytes,
+        total_bytes,
+        elapsed_secs,
     });
 }
 
@@ -157,8 +211,21 @@ async fn start_analysis(app: AppHandle, state: State<'_, AppState>, config: UiCo
     emit(&app, run_id, "index", "Файли перевірено та проіндексовано", 0.08);
     emit(&app, run_id, "processing", "Сканування графа Common Crawl…", 0.15);
 
-    let result = tokio::task::spawn_blocking(move || processor::run(&cfg))
-        .await.map_err(|e| e.to_string())?;
+    let progress_app = app.clone();
+    let started = Instant::now();
+    let result = tokio::task::spawn_blocking(move || {
+        processor::run_with_progress(&cfg, |phase, processed, total| {
+            emit_pipeline_progress(
+                &progress_app,
+                run_id,
+                phase,
+                processed,
+                total,
+                started.elapsed().as_secs(),
+            );
+        })
+    })
+    .await.map_err(|e| e.to_string())?;
     let error = result.as_ref().err().map(|e| format!("{e:#}"));
     {
         let conn = state.db.lock().map_err(|_| "DB lock")?;
@@ -188,7 +255,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            load_default_config, get_run_history, get_file_index, start_analysis
+            load_default_config, get_run_history, get_file_index, start_analysis, run_seo_discovery
         ])
         .run(tauri::generate_context!())
         .expect("error while running Web Radar");

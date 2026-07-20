@@ -175,6 +175,7 @@ fn trim_cr(line: &mut Vec<u8>) {
 fn pass_resolve_targets(
     vertices_path: &Path,
     targets: &[ResolvedTarget],
+    progress: &dyn Fn(u64, u64),
 ) -> Result<AHashMap<u32, String>> {
     // reverse_domain → original domain (from config)
     let wanted: AHashMap<&str, &str> = targets
@@ -208,6 +209,7 @@ fn pass_resolve_targets(
         bytes_approx += n as u64;
         if lines & 0xFFFF == 0 {
             bar.set_position(bytes_approx.min(reader.file_size.max(1)));
+            progress(bytes_approx, reader.file_size);
         }
         lines += 1;
 
@@ -241,6 +243,7 @@ fn pass_resolve_targets(
         }
     }
 
+    progress(reader.file_size, reader.file_size);
     bar.finish_with_message(format!(
         "vertices: found {}/{} targets ({lines} lines scanned)",
         id_to_rev.len(),
@@ -278,6 +281,7 @@ fn pass_resolve_targets(
 fn pass_collect_edges(
     edges_path: &Path,
     target_ids: &AHashMap<u32, String>,
+    progress: &dyn Fn(u64, u64),
 ) -> Result<EdgeSets> {
     let mut inbound: AHashMap<u32, AHashSet<u32>> = target_ids
         .keys()
@@ -314,6 +318,7 @@ fn pass_collect_edges(
         // Update progress every ~65k lines to keep overhead low.
         if lines & 0xFFFF == 0 {
             bar.set_position(bytes_approx.min(reader.file_size.max(1)));
+            progress(bytes_approx, reader.file_size);
         }
         lines += 1;
 
@@ -357,6 +362,7 @@ fn pass_collect_edges(
         }
     }
 
+    progress(reader.file_size, reader.file_size);
     bar.finish_with_message(format!(
         "edges: {inbound_hits} inbound + {outbound_hits} outbound hits over {lines} edges"
     ));
@@ -377,6 +383,7 @@ fn pass_collect_edges(
 fn pass_resolve_names(
     vertices_path: &Path,
     needed_ids: &AHashSet<u32>,
+    progress: &dyn Fn(u64, u64),
 ) -> Result<AHashMap<u32, String>> {
     if needed_ids.is_empty() {
         return Ok(AHashMap::new());
@@ -408,6 +415,7 @@ fn pass_resolve_names(
         bytes_approx += n as u64;
         if lines & 0xFFFF == 0 {
             bar.set_position(bytes_approx.min(reader.file_size.max(1)));
+            progress(bytes_approx, reader.file_size);
         }
         lines += 1;
 
@@ -440,6 +448,7 @@ fn pass_resolve_names(
         }
     }
 
+    progress(reader.file_size, reader.file_size);
     bar.finish_with_message(format!(
         "vertices: resolved {}/{} names",
         id_to_rev.len(),
@@ -466,6 +475,7 @@ fn pass_load_ranks(
     ranks_path: &Path,
     needed_revs: &AHashSet<&str>,
     metric: RankMetric,
+    progress: &dyn Fn(u64, u64),
 ) -> Result<AHashMap<String, f64>> {
     if needed_revs.is_empty() {
         return Ok(AHashMap::new());
@@ -505,6 +515,7 @@ fn pass_load_ranks(
         bytes_approx += n as u64;
         if lines & 0xFFFF == 0 {
             bar.set_position(bytes_approx.min(reader.file_size.max(1)));
+            progress(bytes_approx, reader.file_size);
         }
         lines += 1;
 
@@ -566,6 +577,7 @@ fn pass_load_ranks(
         }
     }
 
+    progress(reader.file_size, reader.file_size);
     bar.finish_with_message(format!(
         "ranks: loaded {}/{} ({})",
         ranks.len(),
@@ -742,6 +754,14 @@ fn pretty_path(p: &Path) -> PathBuf {
 
 /// Run the full multi-pass pipeline using the given config.
 pub fn run(cfg: &Config) -> Result<()> {
+    run_with_progress(cfg, |_, _, _| {})
+}
+
+/// Run the pipeline and report byte progress for each streaming phase.
+pub fn run_with_progress<F>(cfg: &Config, progress: F) -> Result<()>
+where
+    F: Fn(&str, u64, u64) + Sync,
+{
     let targets = cfg.resolved_targets()?;
     info!(
         "processing {} target(s) with rank metric '{}'",
@@ -753,7 +773,7 @@ pub fn run(cfg: &Config) -> Result<()> {
     }
 
     // Pass 1
-    let target_ids = pass_resolve_targets(&cfg.paths.vertices, &targets)?;
+    let target_ids = pass_resolve_targets(&cfg.paths.vertices, &targets, &|done, total| progress("vertices_targets", done, total))?;
     let found_revs: AHashSet<&str> = target_ids.values().map(|s| s.as_str()).collect();
 
     // Always materialize not-found stubs so missing domains are visible in results/.
@@ -769,7 +789,7 @@ pub fn run(cfg: &Config) -> Result<()> {
     }
 
     // Pass 2 — inbound + outbound in one edges scan
-    let edges = pass_collect_edges(&cfg.paths.edges, &target_ids)?;
+    let edges = pass_collect_edges(&cfg.paths.edges, &target_ids, &|done, total| progress("edges", done, total))?;
 
     // Collect every neighbor id we must resolve (sources + destinations).
     let mut needed_ids: AHashSet<u32> = AHashSet::new();
@@ -782,14 +802,16 @@ pub fn run(cfg: &Config) -> Result<()> {
     info!("unique neighbor domains to resolve: {}", needed_ids.len());
 
     // Pass 3
-    let id_to_rev = pass_resolve_names(&cfg.paths.vertices, &needed_ids)?;
+    let id_to_rev = pass_resolve_names(&cfg.paths.vertices, &needed_ids, &|done, total| progress("vertices_neighbors", done, total))?;
 
     // Pass 4 — ranks for neighbors + the targets themselves
     let mut needed_revs: AHashSet<&str> = id_to_rev.values().map(|s| s.as_str()).collect();
     for rev in target_ids.values() {
         needed_revs.insert(rev.as_str());
     }
-    let ranks = pass_load_ranks(&cfg.paths.ranks, &needed_revs, cfg.rank_metric)?;
+    let ranks = pass_load_ranks(&cfg.paths.ranks, &needed_revs, cfg.rank_metric, &|done, total| progress("ranks", done, total))?;
+
+    progress("writing", 0, 1);
 
     // Write JSON for found targets
     let found_paths = write_found_results(
@@ -803,6 +825,7 @@ pub fn run(cfg: &Config) -> Result<()> {
     written.sort();
 
     print_done_summary(&cfg.paths.results_dir, &written);
+    progress("complete", 1, 1);
     Ok(())
 }
 
@@ -833,5 +856,32 @@ mod tests {
     fn split_tabs_basic() {
         let f = split_tabs(b"a\tb\tc");
         assert_eq!(f, vec![&b"a"[..], &b"b"[..], &b"c"[..]]);
+    }
+}
+
+#[cfg(test)]
+mod progress_tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    #[test]
+    fn reports_progress_for_every_pipeline_phase() {
+        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let direct = manifest.join("testdata/config.toml");
+        let config_path = if direct.is_file() {
+            direct
+        } else {
+            manifest.join("../testdata/config.toml")
+        };
+        let cfg = Config::load(config_path).expect("load demo config");
+        let phases = Mutex::new(Vec::new());
+        run_with_progress(&cfg, |phase, processed, total| {
+            phases.lock().unwrap().push((phase.to_string(), processed, total));
+        }).expect("run demo pipeline");
+        let phases = phases.into_inner().unwrap();
+        for expected in ["vertices_targets", "edges", "vertices_neighbors", "ranks", "writing", "complete"] {
+            assert!(phases.iter().any(|(phase, _, _)| phase == expected), "missing progress phase: {expected}");
+        }
+        assert!(phases.iter().filter(|(_, _, total)| *total > 0).all(|(_, done, total)| done <= total));
     }
 }
