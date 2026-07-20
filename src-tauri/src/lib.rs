@@ -5,6 +5,7 @@ mod processor;
 #[path = "../../src/reverse.rs"]
 mod reverse;
 mod db;
+mod manual_audit;
 mod seo;
 
 use std::path::PathBuf;
@@ -106,6 +107,11 @@ fn locate_config(app: &tauri::App) -> PathBuf {
 #[tauri::command]
 fn load_default_config(state: State<'_, AppState>) -> Result<UiConfig, String> {
     Config::load(&state.config_path).map(UiConfig::from_config).map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+async fn run_manual_audit(request: manual_audit::ManualAuditRequest) -> Result<manual_audit::ManualAuditReport, String> {
+    manual_audit::audit(request).await.map_err(|error| format!("{error:#}"))
 }
 
 #[tauri::command]
@@ -247,6 +253,7 @@ async fn start_analysis(app: AppHandle, state: State<'_, AppState>, config: UiCo
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
@@ -255,7 +262,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            load_default_config, get_run_history, get_file_index, start_analysis, run_seo_discovery
+            load_default_config, get_run_history, get_file_index, start_analysis, run_seo_discovery, run_manual_audit
         ])
         .run(tauri::generate_context!())
         .expect("error while running Web Radar");

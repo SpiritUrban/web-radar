@@ -9,6 +9,8 @@
                         "core:default",
                         "dialog:allow-open",
                         "opener:allow-open-path",
-                        "opener:allow-open-url"
+                        "opener:allow-open-url",
+                        "opener:allow-default-urls",
+                        "clipboard-manager:allow-read-text"
                     ]
 }

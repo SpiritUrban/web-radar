@@ -4,12 +4,13 @@ import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
 import {
-  Activity, ArrowUpRight, Check, Database, FileJson, FolderOpen,
+  Activity, ArrowUpRight, Check, Database, FileJson, FileSearch, FolderOpen,
   Gauge, Globe2, History, LoaderCircle, Play, Plus, Radar, RefreshCw,
   Search, Settings2, Trash2, TriangleAlert,
 } from "lucide-react";
 import { useAppStore } from "./store";
 import SeoDiscoveryView from "./SeoDiscoveryView";
+import ManualResearchView from "./ManualResearchView";
 import type { AppConfig, FileIndex, ProgressEvent, RunRecord } from "./types";
 
 const phaseLabels: Record<string, string> = {
@@ -34,7 +35,7 @@ const formatBytes = (bytes: number) => {
 function App() {
   const store = useAppStore();
   const [target, setTarget] = useState("");
-  const [view, setView] = useState<"setup" | "seo" | "history">("setup");
+  const [view, setView] = useState<"setup" | "seo" | "manual" | "history">("setup");
 
   const refresh = async () => {
     const [config, history, files] = await Promise.all([
@@ -101,6 +102,7 @@ function App() {
           <nav className="flex rounded-xl border border-white/10 bg-white/[0.04] p-1 text-sm">
             <button className={view === "setup" ? "nav-active" : "nav-button"} onClick={() => setView("setup")}><Settings2 size={15}/> Аналіз</button>
             <button className={view === "seo" ? "nav-active" : "nav-button"} onClick={() => setView("seo")}><Search size={15}/> SEO discovery</button>
+            <button className={view === "manual" ? "nav-active" : "nav-button"} onClick={() => setView("manual")}><FileSearch size={15}/> Ручний пошук</button>
             <button className={view === "history" ? "nav-active" : "nav-button"} onClick={() => setView("history")}><History size={15}/> Історія <span className="badge">{store.history.length}</span></button>
           </nav>
         </div>
@@ -161,7 +163,7 @@ function App() {
               </aside>
             </div>
           </>
-        ) : view === "seo" ? <SeoDiscoveryView domains={store.config.targets} /> : <HistoryView history={store.history} />}
+         ) : view === "seo" ? <SeoDiscoveryView domains={store.config.targets} /> : view === "manual" ? <ManualResearchView domains={store.config.targets} /> : <HistoryView history={store.history} />}
       </main>
     </div>
   );

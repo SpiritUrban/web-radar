@@ -49,3 +49,12 @@ export interface SeoDiscoveryReport {
   insights: SeoInsight[]; uniqueSourceDomains: number; potentialBacklinks: number;
   brandMentions: number; reputationMentions: number;
 }
+export interface ManualPageAudit {
+  url: string; sourceDomain: string; status: string; httpStatus: number | null; title: string;
+  hasBacklink: boolean; backlinkCount: number; anchors: string[]; relValues: string[];
+  hasBrandMention: boolean; hasDomainMention: boolean; note: string;
+}
+export interface ManualAuditReport {
+  targetDomain: string; audited: number; confirmedBacklinks: number;
+  mentionsWithoutLink: number; blockedOrSkipped: number; pages: ManualPageAudit[];
+}
