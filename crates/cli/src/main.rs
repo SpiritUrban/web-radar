@@ -206,6 +206,15 @@ fn command_index_status(cfg: &Config) -> Result<()> {
             println!("  ! {blocker}");
         }
     }
+    // A user who has no data needs the full instruction, not just a complaint.
+    if status.sources.iter().any(|source| !source.exists) {
+        let sources = cfg.sources();
+        println!();
+        println!(
+            "{}",
+            web_radar_core::data_source::instructions(&sources.crawl(), &sources.expected_dir())
+        );
+    }
     Ok(())
 }
 

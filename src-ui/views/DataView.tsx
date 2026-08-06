@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { hasUnsavedChanges, useAppStore } from "../store";
 import { cleanDomain, formatBytes, formatCount, plural } from "../format";
+import SetupGuideCard from "../components/SetupGuideCard";
 import type { AppConfig, IndexStatus, TierKey, TierStatus } from "../types";
 
 const SOURCE_LABELS: Record<string, { title: string; hint: string }> = {
@@ -35,6 +36,27 @@ export default function DataView({
       store.updateConfig({ [key]: selected } as Partial<AppConfig>);
       onStatusChange();
     }
+  };
+
+  /**
+   * Point all three paths at one folder — what people actually do after
+   * downloading the archives into a single directory.
+   */
+  const chooseDataFolder = async () => {
+    const selected = await open({ directory: true, multiple: false, title: "Тека з файлами графа" });
+    if (typeof selected !== "string" || !index) return;
+    const separator = selected.includes("\\") ? "\\" : "/";
+    const patch: Partial<AppConfig> = {};
+    for (const file of index.setup.files) {
+      const current = store.config[file.kind];
+      // Keep an already-working .gz ranks file rather than renaming it away.
+      const keepArchive =
+        !file.mustBeUnpacked && current.toLowerCase().endsWith(".gz");
+      const name = keepArchive ? file.archiveName : file.fileName;
+      patch[file.kind] = `${selected.replace(/[\\/]+$/, "")}${separator}${name}`;
+    }
+    store.updateConfig(patch);
+    onStatusChange();
   };
 
   const saveConfig = async () => {
@@ -121,12 +143,15 @@ export default function DataView({
         </div>
       </div>
 
-      {index?.blockers.map((blocker) => (
-        <div key={blocker} className="flex items-start gap-3 rounded-xl border border-amber-400/25 bg-amber-400/[.07] p-4 text-sm text-amber-100/90">
-          <AlertTriangle size={17} className="mt-0.5 shrink-0" />
-          <p>{blocker}</p>
-        </div>
-      ))}
+      {index && (
+        <SetupGuideCard
+          setup={index.setup}
+          sources={index.sources}
+          targetDir={parentDir(store.config.vertices)}
+          indexBytes={index.tiers.reduce((sum, tier) => sum + tier.estimatedBytes, 0)}
+          onChooseFolder={() => void chooseDataFolder()}
+        />
+      )}
 
       <div className="grid gap-6 xl:grid-cols-[1.15fr_.85fr]">
         <div className="space-y-6">
@@ -163,14 +188,14 @@ export default function DataView({
               })}
             </div>
             <p className="mt-5 text-[11px] leading-5 text-slate-500">
-              Немає файлів? Завантажте домен-граф з{" "}
+              Файли одного випуску мають бути з одного кроулу. Свіжіші випуски —{" "}
               <button
                 className="text-cyan-400 hover:underline"
                 onClick={() => store.metadata && void openUrl(store.metadata.dataSourceUrl)}
               >
                 commoncrawl.org/web-graphs
-              </button>{" "}
-              — потрібні *-domain-vertices.txt, *-domain-edges.txt і *-domain-ranks.txt.
+              </button>
+              .
             </p>
           </section>
 
@@ -179,7 +204,13 @@ export default function DataView({
               <div className="icon-box"><HardDrive size={18} /></div>
               <div>
                 <h3>Рівні індексу</h3>
-                <p>{index ? `${formatBytes(index.totalBytes)} на диску · вільно ${formatBytes(index.freeBytes)}` : "стан невідомий"}</p>
+                <p>
+                  {!index
+                    ? "стан невідомий"
+                    : index.totalBytes > 0
+                      ? `${formatBytes(index.totalBytes)} на диску · вільно ${formatBytes(index.freeBytes)}`
+                      : `ще не побудований · вільно ${formatBytes(index.freeBytes)}`}
+                </p>
               </div>
               {missingTiers.length > 0 && (
                 <button
@@ -363,6 +394,12 @@ function TierRow({
       )}
     </div>
   );
+}
+
+/** Folder holding a configured file, on either platform's separator. */
+function parentDir(path: string): string {
+  const cut = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  return cut > 0 ? path.slice(0, cut) : path;
 }
 
 function Summary({ label, value }: { label: string; value: string }) {

@@ -47,9 +47,25 @@ cargo build --release   # CLI only, at target/release/web-radar
 
 ## Get the data
 
-Download a domain-level graph from [commoncrawl.org/web-graphs](https://commoncrawl.org/web-graphs)
-— you need all three files of the *same* crawl. Point `config.toml` at them (a folder
-containing the file works too):
+Web Radar does not download the graph for you — it is ~16 GB from a third party, and a
+silent multi-hour download inside an app is worse than an honest instruction. The app
+shows the exact links, sizes and target folder on its **Дані та індекс** tab, and
+`web-radar index status` prints the same thing.
+
+Direct links for the reference crawl (all three must come from the *same* release):
+
+```text
+https://data.commoncrawl.org/projects/hyperlinkgraph/cc-main-2026-apr-may-jun/domain/cc-main-2026-apr-may-jun-domain-vertices.txt.gz   838 MB → unpack
+https://data.commoncrawl.org/projects/hyperlinkgraph/cc-main-2026-apr-may-jun/domain/cc-main-2026-apr-may-jun-domain-edges.txt.gz    13.3 GB → unpack
+https://data.commoncrawl.org/projects/hyperlinkgraph/cc-main-2026-apr-may-jun/domain/cc-main-2026-apr-may-jun-domain-ranks.txt.gz     2.2 GB → leave gzipped
+```
+
+A new release comes out every two to three months; the crawl id is the only part of the
+URL that changes, and newer ones are listed at
+[commoncrawl.org/web-graphs](https://commoncrawl.org/web-graphs). Replace the files and
+the app marks the affected index tiers **stale** on its own.
+
+Point `config.toml` at them (a folder containing the file works too):
 
 ```toml
 [paths]
@@ -95,8 +111,11 @@ In the desktop app this is the **Дані та індекс** tab: the same tier
 bar, measured throughput, an ETA and a working Cancel button.
 
 The build refuses to start if the target volume does not have room, naming the number
-it needs. Sources must be uncompressed: `.gz` streams fine for a full scan but cannot
-be seeked, so it cannot be indexed.
+it needs.
+
+**Only `vertices` and `edges` have to be unpacked.** Queries seek into those two, and
+gzip cannot be seeked. `ranks` is read once, sequentially, and never again — so leave it
+as the `.gz` you downloaded and save 6 GB of disk and one unpacking step.
 
 ---
 

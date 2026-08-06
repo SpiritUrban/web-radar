@@ -23,6 +23,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
+use crate::data_source::{crawl_from_path, setup_guide, GraphFile, SetupGuide, DEFAULT_CRAWL};
 use crate::progress::Progress;
 
 pub use edges::EdgeIndex;
@@ -77,8 +78,11 @@ pub struct SourceStatus {
     pub path: String,
     pub size_bytes: u64,
     pub exists: bool,
-    /// Compressed sources can be streamed but not seeked, so they cannot be indexed.
+    /// Whether the file on disk is still gzipped.
     pub compressed: bool,
+    /// Whether being gzipped is a problem for this particular file: queries
+    /// seek into `vertices` and `edges`, but `ranks` is only ever streamed.
+    pub must_be_unpacked: bool,
 }
 
 impl GraphSources {
@@ -99,6 +103,8 @@ impl GraphSources {
                 size_bytes: std::fs::metadata(path).map(|m| m.len()).unwrap_or(0),
                 exists: path.is_file(),
                 compressed: is_compressed(path),
+                // Only files that get seeked into have to be unpacked.
+                must_be_unpacked: GraphFile::parse(kind).is_some_and(GraphFile::must_be_unpacked),
             })
             .collect()
     }
@@ -107,14 +113,44 @@ impl GraphSources {
         std::fs::metadata(path).map(|m| m.len()).unwrap_or(0)
     }
 
+    /// Uncompressed byte size to reason about.
+    ///
+    /// A missing or still-gzipped file would otherwise make every estimate
+    /// read "≈0 Б", which tells the user nothing at the exact moment they are
+    /// deciding whether they have room for this.
+    fn text_size_of(&self, path: &Path, file: GraphFile) -> u64 {
+        let actual = self.size_of(path);
+        if actual == 0 || is_compressed(path) {
+            file.unpacked_bytes()
+        } else {
+            actual
+        }
+    }
+
     /// Rough node count before anything is built: vertices lines average ~28 B.
     fn estimated_nodes(&self) -> u64 {
-        (self.size_of(&self.vertices) / 28).max(1)
+        (self.text_size_of(&self.vertices, GraphFile::Vertices) / 28).max(1)
     }
 
     /// Rough edge count before anything is built: edges lines average ~18 B.
     fn estimated_edges(&self) -> u64 {
-        (self.size_of(&self.edges) / 18).max(1)
+        (self.text_size_of(&self.edges, GraphFile::Edges) / 18).max(1)
+    }
+
+    /// The crawl these paths belong to, falling back to the reference release.
+    pub fn crawl(&self) -> String {
+        crawl_from_path(&self.edges)
+            .or_else(|| crawl_from_path(&self.vertices))
+            .or_else(|| crawl_from_path(&self.ranks))
+            .unwrap_or_else(|| DEFAULT_CRAWL.to_string())
+    }
+
+    /// Directory the files are expected in — what the setup text points at.
+    pub fn expected_dir(&self) -> PathBuf {
+        self.vertices
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."))
     }
 }
 
@@ -310,6 +346,8 @@ pub struct IndexStatus {
     pub sources: Vec<SourceStatus>,
     /// Everything the index needs but does not have, in plain language.
     pub blockers: Vec<String>,
+    /// Names, links and sizes for getting the data — rendered when files are missing.
+    pub setup: SetupGuide,
 }
 
 impl IndexStatus {
@@ -423,14 +461,25 @@ impl GraphIndex {
     pub fn status(&self, sources: &GraphSources) -> IndexStatus {
         let meta = self.load_meta();
         let source_status = sources.status();
+        let crawl = sources.crawl();
         let mut blockers = Vec::new();
         for status in &source_status {
+            let Some(file) = GraphFile::parse(&status.kind) else {
+                continue;
+            };
             if !status.exists {
-                blockers.push(format!("Файл {} не знайдено: {}", status.kind, status.path));
-            } else if status.compressed {
                 blockers.push(format!(
-                    "Файл {} стиснутий (.gz). Індекс потребує розпакованого файла — розпакуйте його поруч.",
-                    status.kind
+                    "Немає файла {} — завантажте {} (≈{}) і покладіть сюди: {}",
+                    status.kind,
+                    file.archive_name(&crawl),
+                    human_bytes(file.download_bytes()),
+                    sources.expected_dir().display(),
+                ));
+            } else if status.compressed && status.must_be_unpacked {
+                blockers.push(format!(
+                    "Файл {} лишився стиснутим (.gz). Запити читають його за зміщенням, а gzip так не вміє — розпакуйте його (≈{} після розпакування).",
+                    status.kind,
+                    human_bytes(file.unpacked_bytes()),
                 ));
             }
         }
@@ -461,6 +510,7 @@ impl GraphIndex {
             tiers,
             sources: source_status,
             blockers,
+            setup: setup_guide(&crawl),
         }
     }
 
@@ -503,17 +553,24 @@ impl GraphIndex {
             return Ok(meta);
         }
 
+        let crawl = sources.crawl();
         for (kind, path) in sources.list() {
+            let file = GraphFile::parse(kind);
             if !path.is_file() {
                 bail!(
-                    "файл {kind} не знайдено:\n  {}\n\nЗавантажте графи доменів Common Crawl або вкажіть інший шлях у налаштуваннях.",
-                    path.display()
+                    "не знайдено файл {kind}:\n  {}\n\n{}",
+                    path.display(),
+                    crate::data_source::instructions(&crawl, &sources.expected_dir()),
                 );
             }
-            if is_compressed(path) {
+            // `ranks` is streamed once and never seeked, so gzip is fine there.
+            if is_compressed(path) && file.is_some_and(GraphFile::must_be_unpacked) {
                 bail!(
-                    "файл {kind} стиснутий:\n  {}\n\nІндекс потребує довільного доступу, а .gz його не дає. Розпакуйте файл і повторіть.",
-                    path.display()
+                    "файл {kind} стиснутий:\n  {}\n\n\
+                     Запити читають цей файл за зміщенням, а .gz такого не дає — розпакуйте його\n\
+                     (стане ≈{}) і повторіть. Файл ranks розпаковувати не треба.",
+                    path.display(),
+                    human_bytes(file.map(GraphFile::unpacked_bytes).unwrap_or(0)),
                 );
             }
         }
@@ -812,7 +869,7 @@ mod tests {
     }
 
     #[test]
-    fn refuses_compressed_sources_with_an_actionable_message() {
+    fn refuses_a_compressed_vertices_file_with_an_actionable_message() {
         let dir = tempfile::tempdir().expect("tempdir");
         let mut sources = tiny_graph(dir.path());
         let gz = dir.path().join("vertices.txt.gz");
@@ -822,10 +879,12 @@ mod tests {
         let index = GraphIndex::new(dir.path().join("index"));
         let error = index
             .build(&sources, &[Tier::Lookup], &Progress::silent())
-            .expect_err("compressed sources cannot be indexed");
+            .expect_err("a seeked source cannot stay gzipped");
+        let text = format!("{error}");
+        assert!(text.contains("розпакуйте"), "must say what to do: {text}");
         assert!(
-            format!("{error}").contains("Розпакуйте"),
-            "unhelpful: {error}"
+            text.contains("ranks розпаковувати не треба"),
+            "must say which file is exempt: {text}"
         );
 
         let status = index.status(&sources);
@@ -833,6 +892,54 @@ mod tests {
             status.blockers.iter().any(|b| b.contains(".gz")),
             "{:?}",
             status.blockers
+        );
+    }
+
+    #[test]
+    fn a_gzipped_ranks_file_is_accepted_because_it_is_only_ever_streamed() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let sources = tiny_graph(dir.path());
+
+        // Same fixture, but with ranks left compressed as downloaded.
+        let plain = std::fs::read(&sources.ranks).expect("read ranks");
+        let gz_path = dir.path().join("ranks.txt.gz");
+        {
+            use std::io::Write;
+            let file = std::fs::File::create(&gz_path).expect("create gz");
+            let mut encoder = flate2::write::GzEncoder::new(file, flate2::Compression::default());
+            encoder.write_all(&plain).expect("compress");
+            encoder.finish().expect("finish");
+        }
+        let sources = GraphSources {
+            ranks: gz_path,
+            ..sources
+        };
+
+        let index = GraphIndex::new(dir.path().join("index"));
+        index
+            .build(&sources, &Tier::ALL, &Progress::silent())
+            .expect("a gzipped ranks file must not block indexing");
+        assert!(index.status(&sources).is_ready(Tier::Ranks));
+
+        // And it is not reported as something the user must fix.
+        let status = index.status(&sources);
+        assert!(
+            status.blockers.is_empty(),
+            "gzipped ranks must not be a blocker: {:?}",
+            status.blockers
+        );
+
+        // The answers must be the same as from the plain-text build.
+        let engine = crate::query::Engine::open(&index, &sources).expect("open");
+        let report = engine
+            .query("site003.com", crate::query::QueryOptions::default())
+            .expect("query");
+        assert!(report.found);
+        let rank = report.rank.expect("rank came from the gzipped file");
+        // Ranks are stored as f32, so compare within that precision.
+        assert!(
+            (rank - 1.0e-9).abs() < 1e-15,
+            "unexpected rank {rank:e} from the gzipped ranks file"
         );
     }
 

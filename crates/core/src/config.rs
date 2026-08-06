@@ -148,14 +148,13 @@ impl Config {
             ("ranks", &self.paths.ranks),
         ] {
             if !path.exists() {
+                let sources = self.sources();
                 bail!(
-                    "не знайдено файл {label}:\n  {}\n\n\
-                     Покладіть файли графа доменів Common Crawl поруч із config.toml або виправте шлях у [paths].\n\
-                     Потрібні три файли: *-domain-vertices.txt, *-domain-edges.txt, *-domain-ranks.txt\n\
-                     (завантажити: {})\n\n\
-                     Швидка перевірка без багатогігабайтних завантажень:\n  web-radar run -c testdata/config.toml",
+                    "не знайдено файл {label}:\n  {}\n\n{}\n\
+                     Швидка перевірка без багатогігабайтних завантажень:\n  \
+                     web-radar run -c testdata/config.toml",
                     path.display(),
-                    crate::meta::DATA_SOURCE_URL,
+                    crate::data_source::instructions(&sources.crawl(), &sources.expected_dir()),
                 );
             }
             if path.is_dir() {

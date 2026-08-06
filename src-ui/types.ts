@@ -43,7 +43,29 @@ export interface SourceStatus {
   path: string;
   sizeBytes: number;
   exists: boolean;
+  /** Still gzipped on disk. */
   compressed: boolean;
+  /** Whether gzip is a problem here — only files queries seek into. */
+  mustBeUnpacked: boolean;
+}
+
+export interface DownloadHint {
+  kind: "vertices" | "edges" | "ranks";
+  purpose: string;
+  fileName: string;
+  archiveName: string;
+  url: string;
+  downloadBytes: number;
+  unpackedBytes: number;
+  mustBeUnpacked: boolean;
+}
+
+export interface SetupGuide {
+  crawl: string;
+  crawlListUrl: string;
+  files: DownloadHint[];
+  totalDownloadBytes: number;
+  totalResidentBytes: number;
 }
 
 export interface IndexStatus {
@@ -55,6 +77,7 @@ export interface IndexStatus {
   tiers: TierStatus[];
   sources: SourceStatus[];
   blockers: string[];
+  setup: SetupGuide;
 }
 
 // --- jobs ----------------------------------------------------------------

@@ -14,6 +14,7 @@
 //! streaming pipeline as the no-index fallback.
 
 pub mod config;
+pub mod data_source;
 pub mod index;
 pub mod meta;
 pub mod model;
