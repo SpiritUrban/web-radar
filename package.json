@@ -11,7 +11,9 @@
         "url": "https://github.com/SpiritUrban/web-radar.git"
     },
     "scripts": {
+        "start": "tauri dev",
         "dev": "tauri dev",
+        "tauri:dev": "tauri dev",
         "build": "tsc && vite build",
         "dev:frontend": "vite",
         "test": "vitest run",
