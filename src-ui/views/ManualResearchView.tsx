@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { AlertTriangle, CheckCircle2, ClipboardPaste, ExternalLink, FileSearch, Link2, LoaderCircle, Search, ShieldAlert, XCircle } from "lucide-react";
-import type { ManualAuditReport } from "./types";
+import type { ManualAuditReport } from "../types";
 
 const cleanDomain = (value: string) => value.replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "");
 const deriveBrand = (domain: string) => cleanDomain(domain).split(".")[0].split(/[-_]/).map((w) => w[0]?.toUpperCase() + w.slice(1)).join(" ");

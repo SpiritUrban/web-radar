@@ -1,5 +1,10 @@
 0	com.alpha	1
-1	com.example	2
-2	com.beta	1
-3	org.news	3
-4	com.gamma	1
+1	com.beta	1
+2	com.example	2
+3	com.gamma	1
+4	com.shop	3
+5	net.cdn	1
+6	org.news	4
+7	org.wiki	9
+8	ua.com.demo	1
+9	ua.gov.data	2

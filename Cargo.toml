@@ -1,29 +1,43 @@
-[package]
-name = "web-radar"
-version = "0.1.0"
-edition = "2021"
-description = "Memory-efficient CLI for extracting inbound domain links from Common Crawl domain-level web graphs"
-license = "MIT"
-readme = "README.md"
-keywords = ["common-crawl", "webgraph", "cli", "domains"]
-categories = ["command-line-utilities"]
+[workspace]
+members = ["crates/core", "crates/cli", "src-tauri"]
+resolver = "2"
 
-[dependencies]
-anyhow = "1"
+[workspace.package]
+version = "0.3.0"
+edition = "2021"
+license = "MIT"
+authors = ["Vitaliy Dyachuk <shadespiritenator@gmail.com>"]
+repository = "https://github.com/SpiritUrban/web-radar"
+homepage = "https://spiriturban.github.io/web-radar/"
+
+[workspace.dependencies]
+web-radar-core = { path = "crates/core" }
 ahash = "0.8"
+anyhow = "1"
+chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 env_logger = "0.11"
 flate2 = "1"
+fs2 = "0.4"
 indicatif = "0.17"
 log = "0.4"
 memchr = "2"
+memmap2 = "0.9"
+rayon = "1.10"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
+
+# Rule 36 of STAGE2_BRIEF: ~400 dependencies without debug info keeps the
+# Windows commit limit reachable; our own code keeps line tables.
+[profile.dev]
+debug = 1
+
+[profile.dev.package."*"]
+debug = false
 
 [profile.release]
 lto = true
 codegen-units = 1
 opt-level = 3
 strip = true
-panic = "abort"

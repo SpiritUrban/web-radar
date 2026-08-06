@@ -1,0 +1,169 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+jobs:
+  validate-version:
+    name: Validate version and signing config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node scripts/check-version.mjs
+
+      # Rule 11a: a trailing newline in the secret only shows up AFTER a
+      # successful four-minute compile, kills all four platforms at once, and
+      # never reproduces locally. Five seconds here beats seven minutes there.
+      - name: Signing key is usable
+        env:
+          RAW_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          wants_updater=$(node -p "require('./src-tauri/tauri.conf.json').bundle.createUpdaterArtifacts === true")
+          if [ -z "${RAW_KEY:-}" ]; then
+            if [ "$wants_updater" = "true" ]; then
+              echo "::error title=Updater misconfigured::createUpdaterArtifacts is true but TAURI_SIGNING_PRIVATE_KEY is empty. Add the secret, or set createUpdaterArtifacts to false."
+              exit 1
+            fi
+            echo "::notice title=Updater disabled::No signing key configured; this release will not carry update artifacts."
+            exit 0
+          fi
+          key=$(printf '%s' "$RAW_KEY" | tr -d '\r\n')
+          KEY="$key" node -e '
+            const decoded = Buffer.from(process.env.KEY, "base64").toString("utf8").slice(0, 120);
+            if (decoded.includes("rsign encrypted secret key")) process.exit(0);
+            if (decoded.includes("minisign public key")) {
+              console.log("::error title=Wrong key::TAURI_SIGNING_PRIVATE_KEY holds the .pub file. Paste the private .tauri-key instead.");
+              process.exit(2);
+            }
+            console.log("::error title=Wrong key::TAURI_SIGNING_PRIVATE_KEY is not a base64 rsign private key.");
+            process.exit(3);'
+          pubkey=$(node -p "require('./src-tauri/tauri.conf.json').plugins?.updater?.pubkey || ''")
+          if [ "$wants_updater" = "true" ] && [ -z "$pubkey" ]; then
+            echo "::error title=Updater misconfigured::plugins.updater.pubkey is empty while createUpdaterArtifacts is true."
+            exit 1
+          fi
+          echo "Signing key looks like a private rsign key."
+
+  build:
+    name: Build (${{ matrix.label }})
+    needs: validate-version
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        # Rule 3: no macos-13 — that label waits in Queued for hours.
+        # Rule 4: matrix keys use underscores; `matrix.rust-targets` parses as
+        # a subtraction.
+        include:
+          - { platform: windows-latest, label: windows-x64, args: "", rust_targets: "" }
+          - { platform: ubuntu-22.04, label: linux-x64, args: "", rust_targets: "" }
+          - {
+              platform: macos-latest,
+              label: macos-arm64,
+              args: "--target aarch64-apple-darwin",
+              rust_targets: "aarch64-apple-darwin",
+            }
+          - {
+              platform: macos-latest,
+              label: macos-x64,
+              args: "--target x86_64-apple-darwin",
+              rust_targets: "x86_64-apple-darwin",
+            }
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+          key: ${{ matrix.label }} # rule 5
+
+      # Rule 11 + 11a: normalise the secrets once, before anything builds, and
+      # do NOT repeat them in a job-level `env:` — job level wins and the raw
+      # value with its trailing newline would silently come back.
+      - name: Normalise signing secrets
+        env:
+          RAW_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          RAW_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          if [ -n "${RAW_KEY:-}" ]; then
+            printf 'TAURI_SIGNING_PRIVATE_KEY=%s\n' "$(printf '%s' "$RAW_KEY" | tr -d '\r\n')" >> "$GITHUB_ENV"
+          fi
+          if [ -n "${RAW_PASSWORD:-}" ]; then
+            printf 'TAURI_SIGNING_PRIVATE_KEY_PASSWORD=%s\n' "$(printf '%s' "$RAW_PASSWORD" | tr -d '\r\n')" >> "$GITHUB_ENV"
+          fi
+
+      - name: Install Linux GUI dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - run: npm ci
+
+      # Rule 27a: rust-cache restores target/ including last release's bundles
+      # and a stale embedded icon resource. Both end up in the release silently.
+      - name: Drop cached bundles and the Windows resource stub
+        shell: bash
+        run: |
+          rm -rf target/*/bundle target/bundle
+          if [ "${{ matrix.platform }}" = "windows-latest" ]; then
+            rm -rf target/*/build/web-radar-desktop-*
+          fi
+
+      # Rule 20 + 9a: run the same build ourselves first, invoked exactly the
+      # way tauri-action invokes it, because the action only surfaces an exit code.
+      - name: Build desktop app
+        id: build_app
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run tauri build -- ${{ matrix.args }} 2>&1 | tee build.log
+      - name: Surface build output
+        if: failure() && steps.build_app.conclusion == 'failure'
+        shell: bash
+        run: bash scripts/ci-annotate.sh "Build output (${{ matrix.label }})" build.log
+
+      - name: Publish bundles
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Rule 8a: no trailing `--` here. The action appends its own separator
+          # and npm strips only the first one, so the target would leak into cargo.
+          tauriScript: "npm run tauri"
+          # Rule 10: without the condition a manual run creates a release tagged "main".
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/') && format('Web Radar {0}', github.ref_name) || '' }}
+          releaseBody: "Інсталятори для Windows, macOS та Linux. Повний перелік змін — у комітах до цього тега."
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true # rule 12: no latest.json means a 404 endpoint
+          args: ${{ matrix.args }}
+
+  deploy-site:
+    needs: build
+    # Rule 14a: a job can go red AFTER uploading its artifacts (a runner crash
+    # in `Post Run …`), and then the release is complete while the site silently
+    # stays on the previous version.
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/') }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/pages.yml

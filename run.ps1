@@ -1,12 +1,17 @@
-# web-radar — one-command runner (like `npm start`)
+# Web Radar — one-command runner for Windows.
 #
-# Usage:
-#   .\run.ps1              # build + run with config.toml
-#   .\run.ps1 -Demo        # tiny fixture, no multi-GB files needed
-#   .\run.ps1 -Open        # open results folder in Explorer after run
-#   .\run.ps1 -Demo -Open
+#   .\run.ps1                     index status (what exists, what it would cost)
+#   .\run.ps1 -Build              build every index tier
+#   .\run.ps1 -Build lookup       build one tier: lookup | ranks | inbound
+#   .\run.ps1 -Query example.com  ask about one domain
+#   .\run.ps1 -Scan               full streaming scan of config.toml targets
+#   .\run.ps1 -Demo               tiny fixture, no multi-GB downloads
+#   .\run.ps1 -Open               open the results folder afterwards
 
 param(
+    [string[]]$Build,
+    [string]$Query,
+    [switch]$Scan,
     [switch]$Demo,
     [switch]$Open,
     [switch]$SkipBuild
@@ -16,17 +21,16 @@ $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
 $config = if ($Demo) { "testdata\config.toml" } else { "config.toml" }
-$resultsHint = if ($Demo) { "testdata\results" } else { "results" }
 
 Write-Host ""
-Write-Host "=== web-radar ===" -ForegroundColor Cyan
-Write-Host "Project:  $PSScriptRoot"
-Write-Host "Config:   $config"
+Write-Host "=== Web Radar ===" -ForegroundColor Cyan
+Write-Host "Project: $PSScriptRoot"
+Write-Host "Config:  $config"
 Write-Host ""
 
 if (-not $SkipBuild) {
-    Write-Host "Building release (first time can take a few minutes)..." -ForegroundColor Yellow
-    cargo build --release
+    Write-Host "Building release binary (first time takes a few minutes)..." -ForegroundColor Yellow
+    cargo build --release -p web-radar
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     Write-Host ""
 }
@@ -34,32 +38,36 @@ if (-not $SkipBuild) {
 $exe = Join-Path $PSScriptRoot "target\release\web-radar.exe"
 if (-not (Test-Path $exe)) {
     Write-Host "ERROR: binary not found at $exe" -ForegroundColor Red
-    Write-Host "Run: cargo build --release"
+    Write-Host "Run: cargo build --release -p web-radar"
     exit 1
 }
 
-Write-Host "Running..." -ForegroundColor Yellow
-& $exe -c $config
+$arguments = @("-c", $config)
+if ($Query) {
+    $arguments += @("query", $Query)
+} elseif ($Scan) {
+    $arguments += "run"
+} elseif ($PSBoundParameters.ContainsKey("Build")) {
+    $arguments += @("index", "build")
+    if ($Build) { $arguments += $Build }
+} else {
+    $arguments += @("index", "status")
+}
+
+& $exe @arguments
 $code = $LASTEXITCODE
 
 Write-Host ""
-if ($code -eq 0) {
-    $absResults = Join-Path $PSScriptRoot $resultsHint
-    Write-Host "OK. Results are here:" -ForegroundColor Green
-    Write-Host "  $absResults" -ForegroundColor Green
-    if (Test-Path $absResults) {
-        Get-ChildItem $absResults -Filter *.json | ForEach-Object {
-            Write-Host ("  - " + $_.FullName + "  (" + $_.Length + " bytes)")
-        }
-    }
-    if ($Open -and (Test-Path $absResults)) {
-        Invoke-Item $absResults
-    }
-} else {
+if ($code -ne 0) {
     Write-Host "FAILED (exit $code)." -ForegroundColor Red
-    Write-Host "If files are missing, download domain edges+ranks from:" -ForegroundColor Yellow
-    Write-Host "  https://commoncrawl.org/web-graphs"
-    Write-Host "Or try the demo:  .\run.ps1 -Demo -Open"
+    Write-Host "No graph files yet? Download them from https://commoncrawl.org/web-graphs" -ForegroundColor Yellow
+    Write-Host "Or try the demo fixture:  .\run.ps1 -Demo -Build" -ForegroundColor Yellow
+    exit $code
 }
 
-exit $code
+if ($Open) {
+    $results = Join-Path $PSScriptRoot (if ($Demo) { "testdata\results" } else { "results" })
+    if (Test-Path $results) { Invoke-Item $results }
+}
+
+exit 0

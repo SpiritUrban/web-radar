@@ -1,17 +1,22 @@
-# === web-radar config ===
-# Paths are relative to THIS file. Gzip (.gz) is OK.
+# === web-radar ===
+# Paths are relative to THIS file. A folder is fine — the tool picks the file
+# inside it. Gzip (.gz) works for `run`, but the index needs plain text.
 
 [paths]
-# Folder is fine — tool picks the file inside automatically.
 vertices = "cc-main-2026-apr-may-jun-domain-vertices.txt"
 edges = "cc-main-2026-apr-may-jun-domain-edges.txt"
 ranks = "cc-main-2026-apr-may-jun-domain-ranks.txt"
 results_dir = "results"
 
+# Where the index lives. It can reach ~18 GB for a full graph and needs about
+# 30 GB of temporary space while the backlink tier is built, so point this at a
+# drive with room — e.g. index_dir = "D:/web-radar-index".
+index_dir = "D:/web-radar-index"
+
 # "pagerank" or "harmonic"
 rank_metric = "pagerank"
 
-# Full URLs are OK — tool strips https://, www., paths.
+# Full URLs are OK — the tool strips https://, www. and any path.
 
 [[targets]]
 domain = "https://my-transfer.com.ua/"

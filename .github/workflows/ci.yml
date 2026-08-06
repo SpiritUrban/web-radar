@@ -1,0 +1,160 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend (types, tests, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Type-check
+        id: typecheck
+        shell: bash
+        run: |
+          set -o pipefail
+          npx tsc --noEmit 2>&1 | tee typecheck.log
+      - name: Surface type errors
+        if: failure() && steps.typecheck.conclusion == 'failure'
+        shell: bash
+        run: bash scripts/ci-annotate.sh "TypeScript output" typecheck.log
+
+      - name: Unit tests
+        id: vitest
+        shell: bash
+        run: |
+          set -o pipefail
+          npx vitest run 2>&1 | tee vitest.log
+      - name: Surface test output
+        if: failure() && steps.vitest.conclusion == 'failure'
+        shell: bash
+        run: bash scripts/ci-annotate.sh "vitest output" vitest.log
+
+      - name: Build app frontend
+        id: build_ui
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee build-ui.log
+      - name: Surface frontend build output
+        if: failure() && steps.build_ui.conclusion == 'failure'
+        shell: bash
+        run: bash scripts/ci-annotate.sh "Frontend build output" build-ui.log
+
+      - name: Build marketing site
+        id: build_site
+        env:
+          GITHUB_PAGES: "true"
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/generate-download-manifest.mjs 2>&1 | tee build-site.log
+          npm run build:site 2>&1 | tee -a build-site.log
+      - name: Surface site build output
+        if: failure() && steps.build_site.conclusion == 'failure'
+        shell: bash
+        run: bash scripts/ci-annotate.sh "Site build output" build-site.log
+
+      - name: Every site asset must be under the Pages subdirectory
+        shell: bash
+        run: |
+          node -e '
+            const html = require("fs").readFileSync("site/dist/index.html", "utf8");
+            const refs = [...html.matchAll(/(?:src|href)="([^"]+)"/g)]
+              .map((m) => m[1])
+              .filter((u) => !/^https?:/.test(u));
+            if (refs.length === 0) throw new Error("no local asset references found — this check proves nothing");
+            const bad = refs.filter((u) => !u.startsWith("/web-radar/"));
+            if (bad.length) throw new Error("assets not prefixed with /web-radar/: " + bad.join(", "));
+            console.log(`${refs.length} local asset references are correctly prefixed`);
+          '
+
+  rust:
+    name: Rust (fmt, clippy, tests) on Linux
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+          key: ci-linux # rule 5: never share a cache key with another job
+
+      - name: Install Linux GUI dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      # Rule 2: `tauri::generate_context!` embeds dist/ at compile time and
+      # dist/ is gitignored — without this, cargo dies with "proc macro panicked".
+      - name: Build frontend for the Tauri context macro
+        run: |
+          npm ci
+          npm run build
+
+      - name: cargo fmt
+        id: fmt
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo fmt --all --check 2>&1 | tee fmt.log
+      - name: Surface formatting diff
+        if: failure() && steps.fmt.conclusion == 'failure'
+        shell: bash
+        run: bash scripts/ci-annotate.sh "cargo fmt output" fmt.log
+
+      - name: cargo clippy
+        id: clippy
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo clippy --workspace --all-targets --message-format=short -- -D warnings 2>&1 | tee clippy.log
+      - name: Surface clippy diagnostics
+        if: failure() && steps.clippy.conclusion == 'failure'
+        shell: bash
+        run: bash scripts/ci-annotate.sh "Clippy output" clippy.log
+
+      # Rule 6a: a Linux runner is the first place platform assumptions in
+      # otherwise portable code actually break.
+      - name: cargo test
+        id: test
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test --workspace 2>&1 | tee cargo-test.log
+      - name: Surface test output
+        if: failure() && steps.test.conclusion == 'failure'
+        shell: bash
+        run: bash scripts/ci-annotate.sh "cargo test output" cargo-test.log
+
+  version:
+    name: Version strings agree
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node scripts/check-version.mjs

@@ -1,0 +1,11 @@
+# Rule 30 of STAGE2_BRIEF: without forced LF a Windows checkout produces CRLF
+# and `cargo fmt --check` fails on the Linux runner for reasons invisible here.
+* text=auto eol=lf
+
+*.png binary
+*.ico binary
+*.icns binary
+*.jpg binary
+*.gz binary
+*.idx binary
+*.bin binary

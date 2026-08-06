@@ -1,107 +1,55 @@
-# web-radar
+# Web Radar
 
-Memory-efficient Rust CLI that extracts **inbound and outbound domain links** (plus each target’s own rank) from [Common Crawl](https://commoncrawl.org/) domain-level web graphs.
+**Who links to this domain?** — answered in milliseconds, from the
+[Common Crawl](https://commoncrawl.org/web-graphs) domain-level web graph, entirely on your machine.
 
-For every domain listed in `config.toml` the tool streams the multi‑gigabyte graph files (never loads the full edges file into RAM) and writes one JSON report:
+The published graph is three plain text files. For the 2026 apr–jun crawl that is
+**79 GB** covering **121 091 933 domains** and **3.9 billion links**:
 
-1. **Own rank** — PageRank or Harmonic Centrality of the target itself  
-2. **Inbound** — domains that link *to* the target (with rank)  
-3. **Outbound** — domains the target links *to* (with rank)
+| file | size | layout |
+|---|---|---|
+| `*-domain-vertices.txt` | 3.4 GB | `id ⇥ reverse_domain ⇥ n_hosts`, sorted by name |
+| `*-domain-edges.txt` | 67 GB | `from_id ⇥ to_id`, sorted by source |
+| `*-domain-ranks.txt` | 8.3 GB | harmonic and PageRank positions and values |
 
-Output path:
+Answering one backlink question by streaming those files costs a full read of all
+79 GB — every single time. Web Radar reads them **once**, into an index, and every
+question after that is a seek.
 
-```text
-results/{reversed-domain}.json
-```
+| | streaming (v0.2, still available) | with the index (v0.3) |
+|---|---|---|
+| find a domain | full scan of vertices | **instant** |
+| where it links to | full scan of edges (67 GB) | **instant** |
+| who links to it | full scan of edges (67 GB) | **instant** |
+| rank + global position | full scan of ranks | **instant**, position included |
+| measured on the graph above | tens of minutes per run | **14–38 ms per query** |
 
-Example: `skytransfer.com.ua` → `results/ua.com.skytransfer.json`
-
----
-
-## Requirements
-
-| Need | Notes |
-|------|--------|
-| [Rust](https://rustup.rs/) 1.75+ | `cargo` on `PATH` |
-| Windows PowerShell | for `.\run.ps1` (or run the `.exe` yourself) |
-| Disk | vertices ~1–3 GiB, edges ~10–20 GiB, ranks ~1–2 GiB |
-| RAM | usually a few hundred MB (depends on neighbor count, not edges file size) |
-
-Install Rust once:
-
-```powershell
-# https://rustup.rs — then restart the terminal
-rustc --version
-cargo --version
-```
+Web Radar ships as a desktop app (Windows, macOS, Linux) and as a CLI. Same engine,
+same index, no account, no network.
 
 ---
 
-## Quick start (recommended on Windows)
+## Install
 
-Open PowerShell **in the project root** (`web-radar\`):
+Download an installer from the [releases page](https://github.com/SpiritUrban/web-radar/releases)
+or the [project site](https://spiriturban.github.io/web-radar/). Installed copies update
+themselves.
 
-```powershell
-# 1) Tiny offline demo (no multi-GB downloads) + open results in Explorer
-.\run.ps1 -Demo -Open
+Building from source needs [Rust](https://rustup.rs/) 1.80+ and Node 20+:
 
-# 2) Full run against Common Crawl files + open results
-.\run.ps1 -Open
-
-# 3) Full run without opening Explorer
-.\run.ps1
-```
-
-### What `run.ps1` does
-
-1. `cd` to the project folder (safe if you launch it from elsewhere)  
-2. `cargo build --release` (unless `-SkipBuild`)  
-3. Runs `target\release\web-radar.exe -c …`  
-4. Prints **absolute paths** to every `*.json` under the results folder  
-5. Optionally opens that folder in Explorer (`-Open`)
-
-### `run.ps1` flags
-
-| Flag | Meaning |
-|------|---------|
-| *(none)* | Build + run with `config.toml` → results in `results\` |
-| `-Demo` | Use tiny fixture `testdata\config.toml` → `testdata\results\` (no CC downloads) |
-| `-Open` | After a successful run, open the results folder in Explorer |
-| `-SkipBuild` | Skip `cargo build`; use an already-built `target\release\web-radar.exe` |
-
-Examples:
-
-```powershell
-.\run.ps1 -Demo              # quick smoke test
-.\run.ps1 -Demo -Open        # smoke test + open folder
-.\run.ps1 -Open              # real graph run + open folder
-.\run.ps1 -SkipBuild -Open   # re-run without recompiling
-```
-
-If PowerShell blocks scripts:
-
-```powershell
-Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-# or one-shot:
-powershell -ExecutionPolicy Bypass -File .\run.ps1 -Demo -Open
+```bash
+npm ci
+npm run tauri build     # desktop app
+cargo build --release   # CLI only, at target/release/web-radar
 ```
 
 ---
 
-## Full run checklist (real Common Crawl data)
+## Get the data
 
-1. **Download** a domain graph from [Common Crawl Web Graphs](https://commoncrawl.org/web-graphs). You need three files:
-
-   | Kind | Typical name |
-   |------|----------------|
-   | Vertices | `*-domain-vertices.txt` (or `.gz`) |
-   | Edges | `*-domain-edges.txt` (or `.gz`, largest) |
-   | Ranks | `*-domain-ranks.txt` (or `.gz`) |
-
-2. **Place them** next to `config.toml` (or point `[paths]` at them).  
-   Folders that contain a single matching file are OK — the tool picks the file inside automatically.
-
-3. **Edit** `config.toml` — paths + target domains:
+Download a domain-level graph from [commoncrawl.org/web-graphs](https://commoncrawl.org/web-graphs)
+— you need all three files of the *same* crawl. Point `config.toml` at them (a folder
+containing the file works too):
 
 ```toml
 [paths]
@@ -110,202 +58,127 @@ edges    = "cc-main-2026-apr-may-jun-domain-edges.txt"
 ranks    = "cc-main-2026-apr-may-jun-domain-ranks.txt"
 results_dir = "results"
 
+# The index can reach ~17 GB and needs ~30 GB of temporary space while the
+# backlink tier is built. Point it at a drive with room.
+index_dir = "D:/web-radar-index"
+
 rank_metric = "pagerank"   # or "harmonic"
 
 [[targets]]
 domain = "https://example.com/"
-
-[[targets]]
-domain = "https://another-site.com.ua/"
 ```
 
-4. **Run** from the project root:
-
-```powershell
-.\run.ps1 -Open
-```
-
-A full edges pass can take a long time (tens of minutes on HDD; faster on SSD). Progress bars show throughput and ETA.
-
-5. **Read** results under `results\` (absolute path is printed at the end).
+> Keep the graph files out of a synced folder (OneDrive, Dropbox). They are tens of
+> gigabytes and every pass over them will fight the sync client.
 
 ---
 
-## Configuration reference
+## Build the index
 
-Paths in `config.toml` are **relative to the config file’s directory** (not necessarily your current working directory).
+Three independent tiers — build only what you need, drop any of them to reclaim space.
+Times below are measured on the graph above, on a 4-core laptop with a ~100 MB/s volume:
 
-| Key | Description |
-|-----|-------------|
-| `paths.vertices` | Domain vertices file or folder containing it |
-| `paths.edges` | Domain edges file or folder |
-| `paths.ranks` | Domain ranks file or folder |
-| `paths.results_dir` | Output directory (default `results`) |
-| `rank_metric` | `"pagerank"` (default) or `"harmonic"` |
-| `[[targets]].domain` | URL or bare hostname — `https://`, `www.`, paths, ports are stripped |
+| tier | what it enables | size | build time |
+|---|---|---|---|
+| `lookup` | find a domain, list where it links **to** | 17 MB | 35 s |
+| `ranks` | PageRank / harmonic **and global position** for every domain | 1.8 GB | ~10 min |
+| `inbound` | who links **to** a domain — the backlink question | ~15 GB | ~30–50 min, ~30 GB temp |
 
-Gzip (`.gz`) is detected by extension and streamed automatically.
-
----
-
-## Manual build & run (without `run.ps1`)
-
-```powershell
-# from project root
-cargo build --release
-
-# real config
-.\target\release\web-radar.exe -c config.toml
-
-# demo fixture
-.\target\release\web-radar.exe -c testdata\config.toml
+```bash
+web-radar index status          # what exists, what it would cost
+web-radar index build lookup    # start here — a minute, and search works
+web-radar index build           # everything
+web-radar index drop inbound    # reclaim the big one
 ```
 
-### CLI flags
+In the desktop app this is the **Дані та індекс** tab: the same tiers with a progress
+bar, measured throughput, an ETA and a working Cancel button.
 
-| Flag | Description |
-|------|-------------|
-| `-c`, `--config <FILE>` | Config path (default `config.toml`) |
-| `-v` / `-vv` / `-vvv` | More log detail (`info` / `debug` / `trace`) |
-| `-q`, `--quiet` | Errors only |
+The build refuses to start if the target volume does not have room, naming the number
+it needs. Sources must be uncompressed: `.gz` streams fine for a full scan but cannot
+be seeked, so it cannot be indexed.
 
-Logging also respects `RUST_LOG` if you set it, e.g.:
+---
 
-```powershell
-$env:RUST_LOG = "debug"
-.\target\release\web-radar.exe -c config.toml
+## Use it
+
+```bash
+web-radar query example.com                 # table
+web-radar query example.com --json --save   # results/com.example.json
+web-radar query example.com --metric harmonic --top 50
 ```
-
----
-
-## Output schema
-
-### Found domain
-
-```json
-{
-  "domain": "example.com",
-  "found": true,
-  "rank": 0.05,
-  "inbound": [
-    { "domain": "other.com", "rank": 123.45 },
-    { "domain": "blog.news.org", "rank": 12.3 }
-  ],
-  "outbound": [
-    { "domain": "partner.org", "rank": 9.1 },
-    { "domain": "cdn.assets.net", "rank": 0.4 }
-  ]
-}
-```
-
-`inbound` and `outbound` are sorted by `rank` **descending** (strongest first).
-
-### Not found in the graph (stub)
-
-If a target is missing from Common Crawl vertices, a stub is still written so the gap is obvious:
-
-```json
-{
-  "domain": "my-transfer.com.ua",
-  "found": false,
-  "rank": null,
-  "inbound": [],
-  "outbound": []
-}
-```
-
-### Field meanings
-
-| Field | Meaning |
-|-------|---------|
-| `domain` | Normalized target hostname |
-| `found` | `true` if the domain exists in vertices; `false` → stub only |
-| `rank` | Centrality of the **target itself** (`null` if not found) |
-| `inbound[]` | Who links **to** the target |
-| `outbound[]` | Where the target links **to** |
-| `*.rank` | Same metric as `rank_metric` for that neighbor |
-
-**Filename** = reverse domain of the target:
-
-| Domain | File |
-|--------|------|
-| `example.com` | `com.example.json` |
-| `skytransfer.com.ua` | `ua.com.skytransfer.json` |
-
----
-
-## Understanding `rank`
-
-- Comes from Common Crawl ranks (`#pr_val` or `#harmonicc_val`).
-- **Larger number = more important** in the link graph (not Google SERP position).
-- Values are small fractions (often `0.01` for global giants, `1e-9` for small sites).  
-  Example: `7.97e-9` means `0.00000000797` — **much smaller** than `0.009`.
-- Do not compare PageRank and Harmonic numbers directly (different scales).
-
----
-
-## How it works
-
-Four streaming passes:
-
-1. **Vertices (targets)** — map configured domains → node IDs. Missing domains get `found: false` stubs immediately.  
-2. **Edges** — single pass: inbound (`to` = target) + outbound (`from` = target).  
-3. **Vertices (neighbors)** — resolve neighbor IDs → domain names.  
-4. **Ranks** — attach centrality to targets and neighbors.
-
-Progress bars ([indicatif](https://crates.io/crates/indicatif)) show bytes / speed / ETA per pass.
-
----
-
-## Project layout
 
 ```text
-web-radar/
-├── Cargo.toml
-├── config.toml              # real run configuration
-├── run.ps1                  # one-command build + run (Windows)
-├── README.md
-├── results/                 # JSON output (full run)
-├── testdata/                # tiny offline demo
-│   ├── config.toml
-│   ├── vertices.txt
-│   ├── edges.txt
-│   ├── ranks.txt
-│   └── results/
-└── src/
-    ├── main.rs              # CLI (clap + logging)
-    ├── config.rs            # TOML load & validation
-    ├── reverse.rs           # reverse-domain helpers
-    └── processor.rs         # multi-pass pipeline
+skytransfer.com.ua
+  pagerank: 4.547172e-9 (#26892560)
+  inbound: 10   outbound: 15   in 14 ms
 ```
 
-Graph dumps (`*-domain-*.txt`) live next to `config.toml` when you do a full run (often as a folder with the file inside).
+Every answer says what it does **not** know. Without the `ranks` tier ranks read as 0
+and the app says so; without `inbound` it says the backlink question is unanswered
+rather than reporting zero backlinks.
+
+### Without an index
+
+`web-radar run` keeps the original v0.2 pipeline: one streaming pass over all three
+files for every domain in `config.toml`, writing `results/{reversed-domain}.json`. It
+needs no extra disk, works on `.gz`, and takes tens of minutes. The desktop app exposes
+it as **Повне сканування**.
 
 ---
 
-## Troubleshooting
+## How the index works
 
-| Problem | What to do |
-|---------|------------|
-| `config file not found` | Run from project root, or pass full path: `-c C:\path\to\config.toml`. Prefer `.\run.ps1`. |
-| `missing vertices/edges/ranks file` | Download the three domain-graph files and fix `[paths]` in `config.toml`. Or try `.\run.ps1 -Demo`. |
-| `found: false` for a domain | Domain is not in this CC release (too new / rarely crawled). Not a code bug. |
-| Script won’t run | `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` or `powershell -ExecutionPolicy Bypass -File .\run.ps1` |
-| Slow full run | Use SSD + release build; decompress `.gz` to `.txt` if CPU-bound on gzip. |
-| `cargo` not found | Install [Rust](https://rustup.rs/) and open a **new** terminal. |
+The three files have properties that make an index cheap, and the build **verifies**
+each one instead of assuming it — an unsorted file disables the affected lookup rather
+than producing wrong answers.
+
+* **vertices is sorted by domain, and `id` is the line number.** So both directions are
+  binary-searchable. A sparse block index (one entry per 256 lines, ~19 MB for 121 M
+  domains) turns any lookup into one in-memory binary search plus a single ~7 KB read.
+* **edges is sorted by source.** All links from one domain are contiguous, so outbound
+  needs only the id at a few thousand file positions — the edges index is built by
+  *sampling* every 4 MB, not by reading 67 GB.
+* **ranks is sorted by centrality, not by domain**, so it cannot be searched at all. It
+  is joined against the vertex index once and stored as a flat array addressed by id
+  (16 bytes per domain: both values, both positions).
+* **backlinks require transposing 3.9 billion edges**, which does not fit in RAM. An
+  external bucket sort writes `(to, from)` pairs into id-range buckets, sorts each
+  bucket, and appends it to a CSR structure (`inbound.off` offsets + `inbound.src`
+  sources). That is the ~30 GB of temporary space, and it is released as it goes.
 
 ---
 
-## Performance tips
+## Repository layout
 
-- Always use **release**: `cargo build --release` / `.\run.ps1`.  
-- Keep graph files on a fast local SSD.  
-- Prefer plain `.txt` over `.gz` if you have disk (less CPU).  
-- Limit `[[targets]]` — popular sites (e.g. `google.com`) create huge neighbor sets.  
-- Peak RAM tracks unique neighbors for your targets, not the full edges file size.
+```
+crates/core/     engine: config, index build/read, query, streaming scan
+crates/cli/      the `web-radar` binary
+src-tauri/       desktop shell (Tauri v2) — commands, SQLite history, SEO tools
+src-ui/          desktop UI (React + Tailwind)
+site/            marketing site published to GitHub Pages
+scripts/         version sync, download manifest, CI annotations
+```
+
+One Cargo workspace, one `Cargo.lock`, one version — `npm run version:sync 0.4.0`
+updates every file and `npm run version:check` (run by CI) proves they agree.
+
+```bash
+cargo test --workspace     # engine
+npx vitest run             # UI and scripts
+cargo clippy --workspace --all-targets -- -D warnings
+```
+
+Releases, the update feed and the site are automated — see [SETUP.md](SETUP.md) for the
+one-time GitHub configuration the repository owner has to do by hand.
 
 ---
 
-## License
+## Author
 
-MIT
+Built by **[Vitaliy Dyachuk](https://spiriturban.github.io/)** — engineer working on
+tools for large-scale data and the web. More projects and services on the
+[personal hub](https://spiriturban.github.io/).
+
+Data: [Common Crawl Foundation](https://commoncrawl.org/). Licensed under
+[MIT](LICENSE) — free to use, keep the attribution.

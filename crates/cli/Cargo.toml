@@ -1,0 +1,24 @@
+[package]
+name = "web-radar"
+description = "Memory-efficient CLI for Common Crawl domain-level web graphs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme = "../../README.md"
+keywords = ["common-crawl", "webgraph", "cli", "domains"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "web-radar"
+path = "src/main.rs"
+
+[dependencies]
+web-radar-core.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+env_logger.workspace = true
+indicatif.workspace = true
+log.workspace = true
+serde_json.workspace = true

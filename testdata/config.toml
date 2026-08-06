@@ -1,15 +1,17 @@
 [paths]
-# Paths are relative to THIS config file (testdata/).
 vertices = "vertices.txt"
 edges = "edges.txt"
 ranks = "ranks.txt"
 results_dir = "results"
+index_dir = "index"
 
 rank_metric = "pagerank"
 
 [[targets]]
 domain = "https://example.com/"
 
-# Intentionally absent from vertices — demo of found=false stub
 [[targets]]
-domain = "https://not-in-graph.test/"
+domain = "demo.com.ua"
+
+[[targets]]
+domain = "not-in-graph.example"

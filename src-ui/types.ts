@@ -5,38 +5,135 @@ export interface AppConfig {
   edges: string;
   ranks: string;
   resultsDir: string;
+  indexDir: string;
   rankMetric: RankMetric;
   targets: string[];
 }
 
-export interface FileIndex {
-  kind: string;
+export interface ProductMetadata {
+  productName: string;
+  version: string;
+  author: string;
+  authorUrl: string;
+  authorGithubUrl: string;
+  repositoryUrl: string;
+  siteUrl: string;
+  copyright: string;
+  dataSourceUrl: string;
+}
+
+// --- index ---------------------------------------------------------------
+
+export type TierKey = "lookup" | "ranks" | "inbound";
+export type TierState = "missing" | "ready" | "stale";
+
+export interface TierStatus {
+  key: TierKey;
+  label: string;
+  description: string;
+  state: TierState;
+  bytes: number;
+  estimatedBytes: number;
+  estimatedTempBytes: number;
+  builtAt: string | null;
+}
+
+export interface SourceStatus {
+  kind: "vertices" | "edges" | "ranks";
   path: string;
   sizeBytes: number;
-  modifiedAt: number | null;
   exists: boolean;
+  compressed: boolean;
 }
+
+export interface IndexStatus {
+  root: string;
+  nodeCount: number;
+  edgeCount: number;
+  totalBytes: number;
+  freeBytes: number;
+  tiers: TierStatus[];
+  sources: SourceStatus[];
+  blockers: string[];
+}
+
+// --- jobs ----------------------------------------------------------------
+
+export interface JobProgress {
+  runId: number;
+  kind: "index" | "scan";
+  stage: string;
+  detail: string;
+  stageDone: number;
+  stageTotal: number;
+  overall: number;
+  bytesPerSec: number;
+  etaSecs: number;
+  elapsedSecs: number;
+}
+
+// --- queries -------------------------------------------------------------
+
+export interface LinkEntry {
+  domain: string;
+  rank: number;
+  position?: number | null;
+}
+
+export interface DomainReport {
+  domain: string;
+  reverseDomain: string;
+  found: boolean;
+  nodeId: number | null;
+  metric: string;
+  rank: number | null;
+  position: number | null;
+  inbound: LinkEntry[];
+  outbound: LinkEntry[];
+  inboundTotal: number;
+  outboundTotal: number;
+  inboundTruncated: boolean;
+  outboundTruncated: boolean;
+  elapsedMs: number;
+  warnings: string[];
+}
+
+export interface Capabilities {
+  lookup: boolean;
+  outbound: boolean;
+  inbound: boolean;
+  ranks: boolean;
+}
+
+export interface QueryOutcome {
+  report: DomainReport;
+  capabilities: Capabilities;
+  nodeCount: number;
+}
+
+// --- history -------------------------------------------------------------
 
 export interface RunRecord {
   id: number;
+  kind: "index" | "scan";
   startedAt: string;
   finishedAt: string | null;
-  status: "running" | "completed" | "failed";
+  status: "running" | "completed" | "failed" | "cancelled";
   rankMetric: string;
   targets: string[];
-  resultsDir: string;
+  outputDir: string;
   error: string | null;
 }
 
-export interface ProgressEvent {
-  runId: number;
-  phase: string;
-  message: string;
-  progress: number;
-  processedBytes?: number;
-  totalBytes?: number;
-  elapsedSecs?: number;
+export interface SeoReportRecord {
+  id: number;
+  generatedAt: string;
+  provider: string;
+  evidenceCount: number;
 }
+
+// --- research tools ------------------------------------------------------
+
 export interface SeoTarget { domain: string; brand: string; }
 export interface SeoEvidence {
   targetDomain: string; queryKind: string; query: string; title: string; url: string;

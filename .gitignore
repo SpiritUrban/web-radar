@@ -1,12 +1,14 @@
 /target/
 /results/
+/index/
 /testdata/results/
+/testdata/index/
 **/*.rs.bk
 *.log
 .DS_Store
 Thumbs.db
 
-# Common Crawl domain graph dumps (multi-GB)
+# Common Crawl domain graph dumps (tens of GB)
 /cc-main-*-domain-vertices.txt/
 /cc-main-*-domain-edges.txt/
 /cc-main-*-domain-ranks.txt/
@@ -14,7 +16,12 @@ Thumbs.db
 /cc-main-*-domain-edges.txt.gz
 /cc-main-*-domain-ranks.txt.gz
 
+# Updater signing keys — losing them is unrecoverable, leaking them is worse
+.tauri-key*
+
 src-tauri/target/
 node_modules/
 dist/
+site/dist/
+site/public/download-manifest.json
 .vite/

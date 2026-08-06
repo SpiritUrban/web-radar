@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { AlertTriangle, ExternalLink, KeyRound, Link2, LoaderCircle, Search, ShieldCheck, Sparkles } from "lucide-react";
-import type { SeoDiscoveryReport } from "./types";
+import type { SeoDiscoveryReport } from "../types";
 
 const deriveBrand = (domain: string) => domain.replace(/^https?:\/\//, "").replace(/^www\./, "").split(".")[0].split(/[-_]/).filter(Boolean).map((word) => word[0]?.toUpperCase() + word.slice(1)).join(" ");
 

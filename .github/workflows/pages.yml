@@ -1,0 +1,99 @@
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "scripts/generate-download-manifest.mjs"
+      - ".github/workflows/pages.yml"
+  workflow_call: # rule 14: a release cannot trigger a workflow via GITHUB_TOKEN
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      # Rule 14b: a deploy triggered by a tag publishes the site AS OF THE TAG,
+      # silently reverting anything merged since. The manifest is unaffected —
+      # it reads GITHUB_REF_NAME, not the checkout.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch || 'main' }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      - name: Generate download manifest
+        id: manifest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # 60 req/h per IP without it, then 403
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/generate-download-manifest.mjs 2>&1 | tee manifest.log
+      - name: Surface manifest output
+        if: failure() && steps.manifest.conclusion == 'failure'
+        shell: bash
+        run: bash scripts/ci-annotate.sh "Download manifest output" manifest.log
+
+      - name: Report what the manifest resolved to
+        shell: bash
+        run: |
+          version=$(node -p "require('./site/public/download-manifest.json').version")
+          assets=$(node -p "require('./site/public/download-manifest.json').assets.length")
+          echo "::notice title=Download manifest::ref=${GITHUB_REF_NAME} -> version ${version}, ${assets} assets"
+
+      - name: Build site
+        id: build_site
+        env:
+          GITHUB_PAGES: "true"
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run build:site 2>&1 | tee site.log
+      - name: Surface site build output
+        if: failure() && steps.build_site.conclusion == 'failure'
+        shell: bash
+        run: bash scripts/ci-annotate.sh "Site build output" site.log
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./site/dist
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+      # Section 11 of STAGE2_BRIEF: a deploy can report success while the live
+      # URL keeps serving the previous build. That used to be invisible.
+      - name: Verify the live site serves this build
+        shell: bash
+        run: |
+          expected=$(node -p "require('./site/public/download-manifest.json').version")
+          url="${{ steps.deployment.outputs.page_url }}download-manifest.json"
+          for attempt in $(seq 1 12); do
+            live=$(curl -sS -L "${url}?check=${GITHUB_RUN_ID}-${attempt}" \
+              | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).version)}catch{console.log("")}})' || true)
+            if [ "$live" = "$expected" ]; then
+              echo "Live site serves ${live} after ${attempt} attempt(s)."
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error title=Site did not go live::${url} serves \"${live}\" instead of ${expected}. The release itself is fine — only the site is stale. Re-run this job or push any change under site/."
+          exit 1

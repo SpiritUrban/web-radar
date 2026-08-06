@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="uk">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Web Radar — хто посилається на ваш домен, за мілісекунди</title>
+    <meta
+      name="description"
+      content="Настільний застосунок для графа доменів Common Crawl: вхідні та вихідні посилання, PageRank і Harmonic — локально, без хмари та підписок."
+    />
+    <meta name="author" content="Vitaliy Dyachuk" />
+    <link rel="author" href="https://spiriturban.github.io/" />
+    <link rel="canonical" href="https://spiriturban.github.io/web-radar/" />
+    <meta name="theme-color" content="#080d19" />
+
+    <!-- Every reshare of the link carries the name, the description and the author. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Web Radar" />
+    <meta property="og:title" content="Web Radar — граф доменів Common Crawl на вашому комп'ютері" />
+    <meta
+      property="og:description"
+      content="79 ГБ графа перетворюються на індекс, після якого «хто посилається на цей домен» відповідається за мілісекунди. Windows, macOS, Linux. MIT."
+    />
+    <meta property="og:url" content="https://spiriturban.github.io/web-radar/" />
+    <meta property="og:image" content="https://spiriturban.github.io/web-radar/og-image.png" />
+    <meta property="og:locale" content="uk_UA" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Web Radar — граф доменів Common Crawl локально" />
+    <meta
+      name="twitter:description"
+      content="Вхідні посилання, вихідні посилання та рейтинги 121 мільйона доменів — миттєво, офлайн."
+    />
+    <meta name="twitter:image" content="https://spiriturban.github.io/web-radar/og-image.png" />
+    <meta name="twitter:creator" content="@spiriturban" />
+
+    <link rel="icon" type="image/png" href="%BASE_URL%favicon.png" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header class="hero">
+      <div class="wrap">
+        <p class="eyebrow">Common Crawl · граф доменів</p>
+        <h1>Хто посилається на ваш домен —<br /><span>за мілісекунди, а не за годину</span></h1>
+        <p class="lead">
+          Web Radar будує локальний індекс над відкритим графом доменів Common Crawl
+          (79 ГБ тексту, 121 мільйон доменів, 3,9 мільярда зв'язків). Після одноразової
+          індексації кожен запит — вхідні посилання, вихідні посилання, PageRank і
+          Harmonic — виконується миттєво й повністю офлайн.
+        </p>
+
+        <div class="downloads" id="downloads">
+          <p class="muted">Завантажуємо перелік збірок…</p>
+        </div>
+        <p class="muted small" id="release-line"></p>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <section class="cards">
+        <article>
+          <h2>Одноразовий індекс</h2>
+          <p>
+            Три рівні: пошук доменів, рейтинги і зворотні посилання. Будуються окремо,
+            видаляються окремо — платите місцем лише за те, що справді потрібно.
+          </p>
+        </article>
+        <article>
+          <h2>Нічого не йде назовні</h2>
+          <p>
+            Файли графа та результати лишаються на вашому диску. Жодних акаунтів, ключів
+            і лімітів запитів — застосунок працює без інтернету.
+          </p>
+        </article>
+        <article>
+          <h2>CLI та GUI</h2>
+          <p>
+            Той самий рушій у застосунку й у консольній утиліті:
+            <code>web-radar query example.com</code> для скриптів і CI.
+          </p>
+        </article>
+        <article>
+          <h2>Чесні відповіді</h2>
+          <p>
+            Якщо рівень індексу не побудований, застосунок каже про це, а не показує нуль.
+            Застарілий індекс позначається, коли файли графа змінилися.
+          </p>
+        </article>
+      </section>
+
+      <section class="how">
+        <h2>Як це працює</h2>
+        <ol>
+          <li>
+            <b>Завантажте граф доменів</b> з
+            <a href="https://commoncrawl.org/web-graphs" rel="noopener">commoncrawl.org/web-graphs</a>
+            — три файли: vertices, edges, ranks.
+          </li>
+          <li><b>Вкажіть шляхи</b> у застосунку та побудуйте індекс (одна кнопка).</li>
+          <li><b>Питайте що завгодно</b> — відповіді приходять із локального індексу.</li>
+        </ol>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <p>
+          Built by
+          <a href="https://spiriturban.github.io/" rel="author noopener">Vitaliy Dyachuk</a>
+          · <a href="https://github.com/SpiritUrban/web-radar" rel="noopener">GitHub</a>
+          · MIT License
+        </p>
+        <p class="muted small">© 2026 Vitaliy Dyachuk. Дані — Common Crawl Foundation.</p>
+      </div>
+    </footer>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

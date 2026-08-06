@@ -1,20 +1,34 @@
 {
     "name": "web-radar-desktop",
     "private": true,
-    "version": "0.2.0",
+    "version": "0.3.0",
     "type": "module",
+    "description": "Common Crawl domain graph explorer — who links to a domain, answered locally",
+    "author": "Vitaliy Dyachuk (https://spiriturban.github.io/)",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/SpiritUrban/web-radar.git"
+    },
     "scripts": {
         "dev": "tauri dev",
         "build": "tsc && vite build",
+        "dev:frontend": "vite",
         "test": "vitest run",
         "tauri": "tauri",
-        "dev:frontend": "vite"
+        "build:site": "vite build --config site/vite.config.ts",
+        "dev:site": "vite --config site/vite.config.ts",
+        "version:sync": "node scripts/sync-version.mjs",
+        "version:check": "node scripts/check-version.mjs",
+        "manifest": "node scripts/generate-download-manifest.mjs"
     },
     "dependencies": {
         "@tauri-apps/api": "^2.8.0",
         "@tauri-apps/plugin-clipboard-manager": "^2.3.2",
         "@tauri-apps/plugin-dialog": "^2.4.0",
         "@tauri-apps/plugin-opener": "^2.5.0",
+        "@tauri-apps/plugin-process": "^2.3.0",
+        "@tauri-apps/plugin-updater": "^2.9.0",
         "lucide-react": "^0.468.0",
         "react": "^18.3.1",
         "react-dom": "^18.3.1",
@@ -22,7 +36,6 @@
     },
     "devDependencies": {
         "@tauri-apps/cli": "^2.8.4",
-        "@tauri-apps/cli-win32-x64-msvc": "^2.8.4",
         "@types/react": "^18.3.18",
         "@types/react-dom": "^18.3.5",
         "@vitejs/plugin-react": "^4.3.4",
