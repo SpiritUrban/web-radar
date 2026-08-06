@@ -32,7 +32,20 @@ Pages problem.
 **Settings → Pages → Build and deployment → Source = GitHub Actions.**
 
 *Signal:* after the first push to `main`, `https://spiriturban.github.io/web-radar/`
-serves the site. Before it, both the site and `/repos/SpiritUrban/web-radar/pages` 404.
+serves the site.
+
+> ⚠️ **Enabling Pages is not the same as setting its source.** With Pages on but the
+> source left at *Deploy from a branch*, GitHub **accepts** the artifact deployment and
+> then fails it. What you see: `deploy-pages` runs for its full timeout and reports only
+> `Timeout reached, aborting!`, the site answers *Site not found*, and
+> `/repos/<owner>/<repo>/deployments` shows `github-pages` deployments ending in
+> `failure` — the one from `main` failing in ~30 s, which is a rejection, not a timeout.
+>
+> Observed on `v0.4.0`: all four builds green, the release complete and correct, and
+> only the site missing. `pages.yml` now passes `enablement: true` to
+> `actions/configure-pages`, which sets the source itself — but that only helps from the
+> *next* tag, because re-running a job uses the workflow file as of the ref that
+> triggered it.
 
 ### 3. Environment rules (after the first Pages deploy)
 

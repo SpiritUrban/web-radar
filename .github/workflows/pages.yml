@@ -72,12 +72,37 @@ jobs:
         shell: bash
         run: bash scripts/ci-annotate.sh "Site build output" site.log
 
-      - uses: actions/configure-pages@v5
+      - name: Configure Pages
+        id: configure
+        uses: actions/configure-pages@v5
+        with:
+          # Sets the Pages source to "GitHub Actions" when it is not already.
+          # A repository whose source is still "Deploy from a branch" *accepts*
+          # an artifact deployment and then fails it: the site 404s and
+          # deploy-pages burns its full timeout before saying anything useful.
+          enablement: true
+
+      - name: Report the Pages configuration
+        shell: bash
+        run: |
+          echo "::notice title=Pages::base_url=${{ steps.configure.outputs.base_url }}"
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: ./site/dist
+
       - id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          # Five minutes is plenty for a healthy deploy; the default ten only
+          # makes a misconfiguration cost twice as long to discover.
+          timeout: 300000
+
+      - name: Explain a failed deployment
+        if: failure() && steps.deployment.conclusion == 'failure'
+        shell: bash
+        run: |
+          echo "::error title=Pages deploy failed::The release itself is unaffected — installers and latest.json live in Releases, not Pages. Check Settings → Pages: Source must be \"GitHub Actions\". Then re-run this job. Deployment history: https://github.com/${{ github.repository }}/deployments"
 
       # Section 11 of STAGE2_BRIEF: a deploy can report success while the live
       # URL keeps serving the previous build. That used to be invisible.
