@@ -23,7 +23,7 @@ jobs:
   deploy:
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url || steps.deployment_retry.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       # Rule 14b: a deploy triggered by a tag publishes the site AS OF THE TAG,
@@ -91,18 +91,39 @@ jobs:
         with:
           path: ./site/dist
 
-      - id: deployment
+      - name: Deploy to Pages
+        id: deployment
         uses: actions/deploy-pages@v4
+        # Deploying depends on GitHub's OIDC token service, which answers
+        # `503 … reset reason: overflow` during platform incidents — seen on
+        # v0.4.0, while every build job was green. The action reports that as
+        # "Ensure GITHUB_TOKEN has permission id-token: write", which sends you
+        # hunting a permissions bug that is not there. So: try, wait, try again.
+        continue-on-error: true
         with:
           # Five minutes is plenty for a healthy deploy; the default ten only
-          # makes a misconfiguration cost twice as long to discover.
+          # makes a broken one cost twice as long to discover.
+          timeout: 300000
+
+      - name: Wait out a transient platform error
+        if: steps.deployment.outcome == 'failure'
+        shell: bash
+        run: |
+          echo "::warning title=Pages deploy retry::First attempt failed; retrying once in 60 s."
+          sleep 60
+
+      - name: Deploy to Pages (retry)
+        id: deployment_retry
+        if: steps.deployment.outcome == 'failure'
+        uses: actions/deploy-pages@v4
+        with:
           timeout: 300000
 
       - name: Explain a failed deployment
-        if: failure() && steps.deployment.conclusion == 'failure'
+        if: failure() && steps.deployment_retry.conclusion == 'failure'
         shell: bash
         run: |
-          echo "::error title=Pages deploy failed::The release itself is unaffected — installers and latest.json live in Releases, not Pages. Check Settings → Pages: Source must be \"GitHub Actions\". Then re-run this job. Deployment history: https://github.com/${{ github.repository }}/deployments"
+          echo "::error title=Pages deploy failed twice::The release itself is unaffected — installers and latest.json live in GitHub Releases, not Pages, so downloads and auto-update keep working. Check https://www.githubstatus.com (Actions/Pages incidents cause a 503 from the OIDC token service) and Settings → Pages (Source must be \"GitHub Actions\"). Then re-run this job — the tag must not be moved. Deployments: https://github.com/${{ github.repository }}/deployments"
 
       # Section 11 of STAGE2_BRIEF: a deploy can report success while the live
       # URL keeps serving the previous build. That used to be invisible.
@@ -110,7 +131,7 @@ jobs:
         shell: bash
         run: |
           expected=$(node -p "require('./site/public/download-manifest.json').version")
-          url="${{ steps.deployment.outputs.page_url }}download-manifest.json"
+          url="${{ steps.deployment.outputs.page_url || steps.deployment_retry.outputs.page_url }}download-manifest.json"
           for attempt in $(seq 1 12); do
             live=$(curl -sS -L "${url}?check=${GITHUB_RUN_ID}-${attempt}" \
               | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).version)}catch{console.log("")}})' || true)
