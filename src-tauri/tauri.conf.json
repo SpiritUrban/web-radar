@@ -31,7 +31,7 @@
       "endpoints": [
         "https://github.com/SpiritUrban/web-radar/releases/latest/download/latest.json"
       ],
-      "pubkey": ""
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDRFRjMwMTA0QTE3RDEzMDEKUldRQkUzMmhCQUh6VGhCVUIzRGs1d29sMXhZMlFCVFNqbW14Y1BjUUo3dVVPQWU1VlBLZ05iVjMK"
     }
   },
   "bundle": {
@@ -43,7 +43,7 @@
     "shortDescription": "Common Crawl domain graph explorer",
     "longDescription": "Web Radar answers who links to a domain and where it links to, from the Common Crawl domain-level web graph, entirely on your machine.",
     "homepage": "https://spiriturban.github.io/web-radar/",
-    "createUpdaterArtifacts": false,
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
