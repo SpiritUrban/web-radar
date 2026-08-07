@@ -166,4 +166,7 @@ jobs:
       contents: read
       pages: write
       id-token: write
+      # A called workflow cannot hold more than its caller grants, and the
+      # deploy needs this to clear artifacts left by a re-run.
+      actions: write
     uses: ./.github/workflows/pages.yml

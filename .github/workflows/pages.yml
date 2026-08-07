@@ -14,6 +14,7 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  actions: write # to delete the artifacts left by a previous attempt
 
 concurrency:
   group: pages
@@ -86,6 +87,26 @@ jobs:
         shell: bash
         run: |
           echo "::notice title=Pages::base_url=${{ steps.configure.outputs.base_url }}"
+
+      # "Re-run failed jobs" uploads another artifact into the SAME run and
+      # keeps the previous attempt's, so deploy-pages stops with "Multiple
+      # artifacts named github-pages were unexpectedly found for this workflow
+      # run" — and every further re-run makes it worse. Clear ours first.
+      - name: Remove page artifacts left by earlier attempts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          stale=$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" \
+            --jq '.artifacts[] | select(.name == "github-pages") | .id' || true)
+          if [ -z "$stale" ]; then
+            echo "No previous github-pages artifact in this run."
+            exit 0
+          fi
+          for id in $stale; do
+            echo "Deleting artifact $id from an earlier attempt."
+            gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id" || true
+          done
 
       - uses: actions/upload-pages-artifact@v3
         with:
