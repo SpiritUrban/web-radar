@@ -1,4 +1,29 @@
-# One-time release setup
+# Release setup and day-to-day operation
+
+## Cheat sheet — which workflow does what
+
+| I want to… | Do this | What runs |
+|---|---|---|
+| **Publish a new version** | `npm run version:sync X.Y.Z`, commit, `git tag vX.Y.Z && git push --tags` | `Release`: validate → 4 builds → publish → **deploy the site** |
+| **Check the builds without publishing** | Actions → **Release** → Run workflow | validate → 4 builds. `deploy-site` is **skipped on purpose** — a manual run is not a tag |
+| **Update only the site** | Actions → **Deploy GitHub Pages** → Run workflow, or push anything under `site/` | manifest → build → deploy |
+| **Check code before releasing** | any push or PR | `CI`: types, tests, clippy, fmt, site build |
+
+Two things that look like failures and are not:
+
+* a grey circle on `deploy-site` in a manual `Release` run — that is the skip above;
+* a green `Release` run does **not** mean the site was deployed, unless it came from a tag.
+
+> **Do not use "Re-run failed jobs" on `deploy-site`.** Each attempt uploads another
+> artifact named `github-pages` into the same run, and `deploy-pages` then refuses:
+> *"Multiple artifacts named github-pages were unexpectedly found."* The workflow now
+> deletes stale ones first, but that fix only applies from the next tag onward, because
+> a re-run uses the workflow file as of the ref that triggered it. Until then, deploy the
+> site with **Deploy GitHub Pages → Run workflow** instead — a fresh run, one artifact.
+
+---
+
+## One-time release setup
 
 Everything in this file has to be done **by the repository owner** — an agent cannot do
 it. Until it is done the pipeline fails in ways that look unrelated to their cause.
